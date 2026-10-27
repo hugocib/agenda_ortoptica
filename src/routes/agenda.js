@@ -1,10 +1,11 @@
 import { z } from 'zod';
 import { html } from '../html.js';
-import { audit, getSetting } from '../db.js';
+import { audit } from '../db.js';
 import { examsWhere } from '../repo.js';
-import { addDays, fmtDate, fmtDateLong, fmtDateTime, isDate, isTime, mondayOf, nowLocal, todayLocal, weekday } from '../time.js';
-import { dayTape, fmtDuration } from '../domain/tape.js';
-import { cap, emptyState, examLine, flash, icon, pageHead, postButton, tape } from '../ui.js';
+import { addDays, fmtDate, fmtDateLong, fmtDateTime, isDate, isTime, mondayOf, nowLocal, todayLocal } from '../time.js';
+import { fmtDuration } from '../domain/tape.js';
+import { cap, dayTapeByPeriod, emptyState, examLine, flash, icon, pageHead, postButton } from '../ui.js';
+import { dayData } from './today.js';
 import { idParam, send, str } from './util.js';
 
 const BlockSchema = z.object({
@@ -20,19 +21,14 @@ export default async function agendaRoutes(app, { db }) {
     const today = todayLocal();
     const monday = mondayOf(isDate(str(req.query.semana)) ? str(req.query.semana) : today);
     const sunday = addDays(monday, 7);
-    const availability = getSetting(db, 'availability');
-    const exams = examsWhere(db, "e.status IN ('agendado','realizado','faltou') AND e.starts_at >= ? AND e.starts_at < ?", [`${monday}T00:00`, `${sunday}T00:00`]);
-    const blocks = db.prepare('SELECT * FROM blocks WHERE starts_at < ? AND ends_at > ? ORDER BY starts_at').all(`${sunday}T00:00`, `${monday}T00:00`);
+    const exams = examsWhere(db, "e.status IN ('pendente','agendado','realizado','faltou') AND e.starts_at >= ? AND e.starts_at < ?", [`${monday}T00:00`, `${sunday}T00:00`]);
 
-    const step = getSetting(db, 'slot_step_min');
     const days = [];
     for (let i = 0; i < 7; i++) {
       const date = addDays(monday, i);
-      const windows = availability.filter((w) => w.weekday === weekday(date));
       const dayExams = exams.filter((e) => e.starts_at.startsWith(date));
-      const dayBlocks = blocks.filter((b) => b.starts_at < `${addDays(date, 1)}T00:00` && b.ends_at > `${date}T00:00`);
-      if (!windows.length && !dayExams.length && !dayBlocks.length) continue;
-      const t = dayTape({ date, windows, exams: dayExams, blocks: dayBlocks, step, nowTime: date === today ? nowLocal().slice(11) : date < today ? '24:00' : null });
+      const { t, windows } = dayData(db, date, { exams: dayExams, nowTime: date === today ? nowLocal().slice(11) : date < today ? '24:00' : null });
+      if (!windows.length && !t.items.length) continue;
       days.push({ date, windows, dayExams, t });
     }
     const sundayLast = addDays(monday, 6);
@@ -53,8 +49,8 @@ export default async function agendaRoutes(app, { db }) {
         ${flash(req.query, req)}
         ${days.length ? html`<div class="week">${days.map((d) => html`<section class="day-col${d.date === today ? ' today' : ''}" aria-label="${fmtDateLong(d.date)}">
           <div class="sec-h"><h2>${cap(fmtDateLong(d.date))}</h2>
-            <span class="aside">${d.windows.length ? html`<span class="mono">${d.windows.map((w) => `${w.start}–${w.end}`).join(', ')}</span>${d.t.freeMinutes ? html` · <span class="free">${fmtDuration(d.t.freeMinutes)} livre</span>` : ''}` : 'fora do horário'}</span></div>
-          ${tape(d.t, (e) => html`<div class="t-body">${examLine(e, { today })}</div>`)}
+            <span class="aside">${!d.windows.length ? 'fora do horário' : d.date < today ? 'já passou' : d.t.freeMinutes ? html`<span class="free">${fmtDuration(d.t.freeMinutes)} livre</span>` : 'sem vagas'}</span></div>
+          ${dayTapeByPeriod(d.t, d.windows, (e) => html`<div class="t-body">${examLine(e, { today })}</div>`, { holdHref: (e) => `/exames/${e.id}` })}
         </section>`)}</div>` : emptyState('Sem horário de exames nesta semana.')}`,
     });
   });

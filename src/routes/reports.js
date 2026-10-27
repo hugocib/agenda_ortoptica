@@ -143,6 +143,14 @@ export default async function reportRoutes(app, { db }) {
           ${reportForm(req, { exam, tplKey, data, rawValues, errors, conclusion, norms: settings.norms })}`,
       }, 400);
     }
+    if (acao === 'validar' && !exam.patient_process && !exam.patient_name) {
+      return send(reply, req, {
+        title: 'Relatório', active: 'hoje',
+        body: html`${pageHead(html`Relatório · ${exam.type_name}`, { back: { href: `/exames/${exam.id}`, label: 'Exame' }, sub: patientLabel(exam) })}
+          <div class="notice err" role="alert"><p>Identifique o doente (n.º de processo ou nome) <a href="/exames/${exam.id}">na página do exame</a> antes de validar. Nada foi validado; o que escreveu continua no formulário (pode guardar como rascunho).</p></div>
+          ${reportForm(req, { exam, tplKey, data, conclusion, norms: settings.norms })}`,
+      }, 400);
+    }
     if (acao === 'validar' && !conclusion) {
       return send(reply, req, {
         title: 'Relatório', active: 'hoje',

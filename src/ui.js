@@ -5,8 +5,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { html, raw } from './html.js';
 import { REASONS } from './domain/slots.js';
-import { examTrack, ORIGIN_LABEL, STATIONS, STATUS_LABEL } from './domain/status.js';
-import { fmtDuration } from './domain/tape.js';
+import { examTrack, ORIGIN_LABEL, STATUS_LABEL } from './domain/status.js';
+import { fmtDuration, periods } from './domain/tape.js';
 import { fmtDateTime, fmtDate, todayLocal } from './time.js';
 import { FONTS, themeById, themesCss } from './themes.js';
 
@@ -27,14 +27,30 @@ function fontFile(family) {
 export const MESSAGES = {
   criado: 'Pedido criado.',
   agendado: 'Exame agendado. Falta marcar no Siima.',
-  reagendado: 'Exame reagendado. Volte a marcar no Siima.',
+  reagendado: 'Hora alterada.',
+  reagendado_siima: 'Hora alterada. Volte a marcar no Siima.',
+  confirmado: 'Reserva confirmada.',
+  recusado: 'Reserva recusada.',
+  alteracao_aceite: 'Alteração aceite.',
+  cancelamento_aceite: 'Cancelamento aceite: a vaga ficou livre.',
+  alteracao_recusada: 'Pedido recusado; fica como estava.',
+  requisicao: 'N.º de requisição guardado.',
+  doente: 'Identificação do doente guardada.',
+  reservado: 'Reserva feita. Fica «por confirmar» até o ortoptista a confirmar.',
+  reserva_mudada: 'Hora mudada. Continua por confirmar.',
+  reserva_anulada: 'Reserva anulada. A vaga ficou livre.',
+  pedido_alteracao: 'Pedido de alteração enviado. A hora nova fica reservada até o ortoptista decidir.',
+  pedido_cancelamento: 'Pedido de cancelamento enviado.',
+  pedido_retirado: 'Pedido retirado.',
+  link: 'Novo link de reservas criado. O anterior deixou de funcionar.',
+  push_teste: 'Notificação de teste enviada.',
   desmarcado: 'Marcação removida; o exame voltou a «por agendar».',
   cancelado: 'Cancelado.',
   realizado: 'Exame marcado como realizado.',
   faltou: 'Registada a falta.',
   anulado: 'Estado «realizado» anulado.',
   siima_marcado: 'Confirmado: marcado no Siima.',
-  siima_registado: 'Confirmado: registado no Siima.',
+  siima_registado: 'Confirmado: executado no Siima.',
   desfeito: 'Alteração desfeita.',
   guardado: 'Guardado.',
   validado: 'Relatório validado. Já pode imprimir e assinar.',
@@ -60,7 +76,11 @@ export const ERRORS = {
   estado: 'Esta ação já não é possível no estado atual do exame (alguém pode tê-lo alterado). A página foi atualizada.',
   concorrencia: 'O exame foi alterado entretanto por outra pessoa. Confirme e tente de novo.',
   nao_existe: 'Não encontrado.',
-  registado: 'Este exame já está registado no Siima: desfaça primeiro o registo.',
+  registado: 'Este exame já está executado no Siima: desfaça primeiro esse passo.',
+  sem_requisicao: 'Indique o n.º de requisição para confirmar.',
+  mesma_hora: 'Essa já é a hora da reserva.',
+  sem_nome: 'Escolha quem está a fazer a reserva.',
+  link_invalido: 'Este link de reservas já não é válido. Peça o novo ao ortoptista.',
   sem_permissao: 'Sem permissão para esta ação.',
   hora_invalida: 'Hora ou data inválida.',
   dados_invalidos: 'Dados inválidos. Verifique os valores e tente de novo.',
@@ -99,22 +119,21 @@ function count(n, kind = '') {
 
 function nav(user, counts, active) {
   if (!user) return '';
-  const ortho = user.role === 'ortoptista';
   const item = (href, label, key, ico, extra = '', cls = '') =>
     html`<a href="${href}" class="nav-i${cls}${active === key ? ' active' : ''}"${active === key ? raw(' aria-current="page"') : ''}>${icon(ico)}<span class="nav-l">${label}</span>${extra}</a>`;
-  const todayCount = ortho ? counts.porRegistarSiima + counts.relatoriosPendentes + counts.porFechar : counts.porMarcarSiima;
+  const todayCount = (counts.porConfirmar || 0) + (counts.porRegistarSiima || 0) + (counts.relatoriosPendentes || 0) + (counts.porFechar || 0) + (counts.porMarcarSiima || 0);
   return html`<nav class="nav" aria-label="Principal">
-    ${item('/hoje', ortho ? 'Hoje' : 'Início', 'hoje', 'hoje', count(todayCount, 'owed'))}
-    ${item('/pedidos', 'Pedidos', 'pedidos', 'pedidos', count(counts.porAgendar))}
+    ${item('/hoje', 'Hoje', 'hoje', 'hoje', count(todayCount, 'owed'))}
     ${item('/agenda', 'Agenda', 'agenda', 'agenda')}
-    ${ortho ? item('/estatistica', 'Estatística', 'estatistica', 'estatistica') : item('/pedidos/novo', 'Novo pedido', 'novo', 'mais', '', ' only-m')}
-    ${ortho ? item('/admin', 'Admin.', 'admin', 'admin') : ''}
+    ${item('/pedidos', 'Pedidos', 'pedidos', 'pedidos', count(counts.porAgendar))}
+    ${item('/estatistica', 'Estatística', 'estatistica', 'estatistica')}
+    ${item('/admin', 'Admin.', 'admin', 'admin')}
   </nav>`;
 }
 
 export const MARK = raw(`<svg class="mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" class="mark-bg"/><path d="M4.5 16c3.4-4.6 7.3-6.9 11.5-6.9s8.1 2.3 11.5 6.9c-3.4 4.6-7.3 6.9-11.5 6.9S7.9 20.6 4.5 16z" class="mark-eye"/><circle cx="16" cy="16" r="4.2" class="mark-iris"/><circle cx="16" cy="16" r="1.7" class="mark-pupil"/></svg>`);
 
-export function layout(req, { title, body, active = '', autorefresh = false, bare = false, wide = false }) {
+export function layout(req, { title, body, active = '', autorefresh = false, bare = false, wide = false, pub = false }) {
   const user = req.user;
   const counts = req.counts || {};
   const look = req.look || { theme: '', mode: 'auto' };
@@ -138,12 +157,12 @@ ${metas}
 <link rel="stylesheet" href="/static/app.css?v=${ASSET_VERSION}">
 <script src="/static/app.js?v=${ASSET_VERSION}" defer></script>
 </head>
-<body${autorefresh ? ' data-autorefresh="300"' : ''}${bare ? ' class="bare"' : user ? ' class="has-nav"' : ''}>
+<body${autorefresh ? ` data-autorefresh="${autorefresh === true ? 300 : autorefresh}"` : ''}${bare ? ' class="bare"' : user && !pub ? ' class="has-nav"' : ''}>
 <a class="skip" href="#conteudo">Saltar para o conteúdo</a>
 ${bare ? '' : html`<header class="top">
-  <a class="brand" href="/hoje">${MARK}<span>Ortóptica</span></a>
-  ${nav(user, counts, active)}
-  ${user ? html`<div class="who"><a href="/conta" class="${active === 'conta' ? 'active' : ''}" title="A minha conta">${user.name}</a>
+  ${pub ? html`<span class="brand">${MARK}<span>Ortóptica</span><span class="brand-sub">reservas</span></span>` : html`<a class="brand" href="/hoje">${MARK}<span>Ortóptica</span></a>`}
+  ${pub ? '' : nav(user, counts, active)}
+  ${user && !pub ? html`<div class="who"><a href="/conta" class="${active === 'conta' ? 'active' : ''}" title="A minha conta">${user.name}</a>
     <form method="post" action="/logout"><button class="btn link" type="submit">Sair</button></form></div>` : ''}
 </header>`}
 <div class="netbar" id="netbar" role="status" aria-live="polite" hidden></div>
@@ -176,11 +195,16 @@ export function proc(v) {
   return html`<span class="proc">${v}</span>`;
 }
 
+/** Identificação numa linha: requisição do Siima, processo e nome (o que existir). */
 export function patientLabel(e) {
-  return html`${proc(e.patient_process)}${e.patient_name ? html` <span class="pname">${e.patient_name}</span>` : ''}`;
+  const req = e.requisition ? html`<span class="req" title="N.º de requisição"><span class="req-l">Req.</span> ${e.requisition}</span>` : '';
+  if (!e.patient_process && !e.patient_name) {
+    return html`${req}${e.source === 'secretariado' && e.status === 'realizado' ? html`<span class="unid">doente por identificar</span>` : ''}`;
+  }
+  return html`${req}${e.patient_process ? proc(e.patient_process) : ''}${e.patient_name ? html` <span class="pname">${e.patient_name}</span>` : ''}`;
 }
 
-/** Botão para copiar um código (processo, SAP) para escrever no Siima. Sem JS fica só o texto. */
+/** Botão para copiar um código (processo, requisição) para escrever no Siima. Sem JS fica só o texto. */
 export function copyable(value, label) {
   if (!value) return html`<span class="muted">—</span>`;
   return html`<button type="button" class="copy" data-copy="${value}" aria-label="Copiar ${label} ${value}">${value}${icon('copiar', 'ico xs')}</button>`;
@@ -191,8 +215,6 @@ export function track(e, { today = todayLocal(), label = true } = {}) {
   const t = examTrack(e, today);
   return html`<span class="track-wrap tone-${t.tone}"><span class="track" aria-hidden="true">${t.states.map((s) => html`<i class="${s}"></i>`)}</span>${label ? html`<span class="track-label">${t.summary}</span>` : html`<span class="sr">${t.summary}</span>`}</span>`;
 }
-
-export { STATIONS };
 
 export function when(e) {
   return e.starts_at ? fmtDateTime(e.starts_at) : '—';
@@ -217,7 +239,7 @@ export function emptyState(text, extra = '') {
  * Fita de um dia (agenda e «Hoje»). `row(e)` desenha o corpo de cada exame.
  * Tempo livre aparece entre exames; o que já passou fica esbatido.
  */
-export function tape(t, row, { emptyText = 'Sem exames.' } = {}) {
+export function tape(t, row, { emptyText = 'Sem exames.', holdHref = null } = {}) {
   if (!t.items.length) return emptyState(emptyText);
   return html`<ol class="tape">${t.items.map((it) => {
     if (it.kind === 'gap') {
@@ -226,9 +248,27 @@ export function tape(t, row, { emptyText = 'Sem exames.' } = {}) {
     if (it.kind === 'block') {
       return html`<li class="t-block"><span class="t-time"><time>${it.start}</time><time class="end">${it.end}</time></span><span class="t-body"><b>Bloqueado</b> · ${it.block.reason}</span></li>`;
     }
+    if (it.kind === 'hold') {
+      const e = it.exam;
+      return html`<li class="t-hold"><span class="t-time"><time>${it.start}</time><time class="end">${it.end}</time></span><span class="t-body"><b>Hora proposta</b> · ${holdHref ? html`<a href="${holdHref(e)}">${e.type_name}</a>` : e.type_name} <span class="muted">(agora ${fmtDate(e.starts_at).slice(0, 5)} ${e.starts_at.slice(11)}${e.change_by_name ? `, pedido de ${e.change_by_name}` : ''})</span></span></li>`;
+    }
     const e = it.exam;
     return html`<li class="t-exam s-${e.status}${e.is_electro ? ' electro' : ''}"><span class="t-time"><time>${it.start}</time><time class="end">${it.end}</time></span>${row(e)}</li>`;
   })}</ol>`;
+}
+
+/**
+ * Fita de um dia separada em períodos (manhã/tarde) segundo o horário; o almoço fica marcado.
+ */
+export function dayTapeByPeriod(t, windows, row, opts = {}) {
+  const ps = periods(t, windows);
+  if (ps.length === 1) return tape({ items: ps[0].items }, row, opts);
+  return html`${ps.map((p) => {
+    const free = p.items.filter((i) => i.kind === 'gap' && !i.past).reduce((a, g) => a + g.minutes, 0);
+    return html`${p.pause ? html`<p class="pause"><span>Almoço</span> <span class="mono">${p.pause.start}–${p.pause.end}</span></p>` : ''}
+    <div class="period"><h3 class="period-h">${p.label} <span class="mono">${p.window.start}–${p.window.end}</span>${free ? html` <span class="free">${fmtDuration(free)} livre</span>` : ''}</h3>
+    ${p.items.length ? tape({ items: p.items }, row, opts) : html`<p class="empty">Sem nada marcado.</p>`}</div>`;
+  })}`;
 }
 
 /** Linha de exame reutilizada em listas e na fita. */
@@ -236,7 +276,7 @@ export function examLine(e, { actions = '', today = todayLocal(), when: showWhen
   return html`<div class="ex">
     <div class="ex-main">
       ${showWhen && e.starts_at ? html`<span class="when">${fmtDate(e.starts_at).slice(0, 5)} ${e.starts_at.slice(11)}</span> ` : ''}<a class="ex-title" href="${href}">${e.type_name}</a>
-      <div class="ex-meta">${patientLabel(e)}${originTag(e.origin, e.project)}${e.priority === 'urgente' && e.status === 'por_agendar' ? html`<span class="urgent">Urgente</span>` : ''}</div>
+      <div class="ex-meta">${patientLabel(e)}${originTag(e.origin, e.project)}${e.source === 'secretariado' && e.booked_by_name ? html`<span class="by">por ${e.booked_by_name}</span>` : ''}${e.priority === 'urgente' && e.status === 'por_agendar' ? html`<span class="urgent">Urgente</span>` : ''}</div>
       ${trackOn ? html`<div class="ex-state">${track(e, { today })}</div>` : ''}
     </div>
     ${actions ? html`<div class="ex-actions">${actions}</div>` : ''}

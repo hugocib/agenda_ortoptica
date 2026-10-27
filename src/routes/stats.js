@@ -1,8 +1,10 @@
-import { html, euros, raw } from '../html.js';
+// Estatística de execução: quanto se fez, quanto faltou, como se usou a agenda e quanto tempo
+// demora cada passo. Sem valores financeiros (a faturação é do secretariado).
+import { html, raw } from '../html.js';
 import { emptyState, pageHead } from '../ui.js';
 import { getSetting } from '../db.js';
 import { capacityMinutes } from '../domain/slots.js';
-import { ORIGIN_LABEL, STATUS_LABEL } from '../domain/status.js';
+import { ORIGIN_LABEL, SOURCE_LABEL, STATUS_LABEL } from '../domain/status.js';
 import { addDays, monthName, todayLocal } from '../time.js';
 import { forbid, isOrtho, send, str } from './util.js';
 
@@ -17,41 +19,62 @@ function range(year, month) {
   return { from: `${year}-01-01`, to: `${year + 1}-01-01` };
 }
 
-function pct(a, b) {
-  return b ? `${Math.round((a / b) * 100)}%` : '—';
-}
+const pct = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '—');
+const median = (xs) => {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+const days = (a, b) => (Date.parse(b) - Date.parse(a)) / 86400000;
+const fmtDays = (d) => (d === null ? '—' : d < 1 ? '< 1 dia' : `${Math.round(d)} ${Math.round(d) === 1 ? 'dia' : 'dias'}`);
 
 export function computeStats(db, year, month) {
   const { from, to } = range(year, month);
-  const rows = db.prepare(`SELECT e.*, t.name AS type_name, t.sort, r.origin
-    FROM exams e JOIN exam_types t ON t.id = e.exam_type_id JOIN requests r ON r.id = e.request_id
+  const rows = db.prepare(`SELECT e.*, t.name AS type_name, t.sort, r.origin, r.source, r.project, rp.status AS report_status, rp.validated_at
+    FROM exams e JOIN exam_types t ON t.id = e.exam_type_id JOIN requests r ON r.id = e.request_id LEFT JOIN reports rp ON rp.exam_id = e.id
     WHERE e.starts_at >= ? AND e.starts_at < ?`).all(`${from}T00:00`, `${to}T00:00`);
   const byType = new Map();
-  const totals = { realizados: 0, faltas: 0, agendados: 0, registados: 0, porRegistar: 0, relatorios: 0, receita: 0, interno: 0, minutos: 0 };
-  const reports = new Set(db.prepare("SELECT exam_id FROM reports WHERE status = 'validado'").pluck().all());
+  const blank = () => ({ realizados: 0, faltas: 0, agendados: 0, cancelados: 0, recusados: 0, executados: 0, porExecutar: 0, relatorios: 0, minutos: 0 });
+  const totals = blank();
+  const wait = [];
+  const toReport = [];
+  const toSiima = [];
+  const bySource = { secretariado: 0, direto: 0 };
+  const byOrigin = {};
+  const projects = new Map();
   for (const e of rows) {
-    if (!byType.has(e.type_name)) byType.set(e.type_name, { name: e.type_name, sort: e.sort, realizados: 0, faltas: 0, agendados: 0, registados: 0, receita: 0, interno: 0 });
+    if (!byType.has(e.type_name)) byType.set(e.type_name, { name: e.type_name, sort: e.sort, ...blank() });
     const t = byType.get(e.type_name);
+    const inc = (k, n = 1) => { t[k] += n; totals[k] += n; };
     if (e.status === 'realizado') {
-      t.realizados++; totals.realizados++;
-      totals.minutos += e.minutes;
-      if (e.siima_registered_at) { t.registados++; totals.registados++; } else totals.porRegistar++;
-      if (reports.has(e.id)) totals.relatorios++;
-      if (e.origin === 'projeto') { t.interno += e.price_cents; totals.interno += e.price_cents; } else { t.receita += e.price_cents; totals.receita += e.price_cents; }
-    } else if (e.status === 'faltou') { t.faltas++; totals.faltas++; } else if (e.status === 'agendado') { t.agendados++; totals.agendados++; }
+      inc('realizados'); inc('minutos', e.minutes);
+      if (e.siima_registered_at) { inc('executados'); toSiima.push(days(`${e.starts_at}:00`, e.siima_registered_at)); } else inc('porExecutar');
+      if (e.report_status === 'validado') { inc('relatorios'); if (e.validated_at) toReport.push(days(`${e.starts_at}:00`, e.validated_at)); }
+      // Espera: do pedido/reserva até ao dia do exame.
+      wait.push(days(e.created_at, `${e.starts_at}:00`));
+      bySource[e.source === 'secretariado' ? 'secretariado' : 'direto']++;
+      byOrigin[e.origin] = (byOrigin[e.origin] || 0) + 1;
+      if (e.origin !== 'externo') projects.set(e.project || '—', (projects.get(e.project || '—') || 0) + 1);
+    } else if (e.status === 'faltou') inc('faltas');
+    else if (e.status === 'agendado' || e.status === 'pendente') inc('agendados');
+    else if (e.status === 'cancelado') inc('cancelados');
+    else if (e.status === 'recusado') inc('recusados');
   }
-  const byOrigin = db.prepare(`SELECT r.origin, COUNT(*) AS n FROM exams e JOIN requests r ON r.id = e.request_id
-    WHERE e.status = 'realizado' AND e.starts_at >= ? AND e.starts_at < ? GROUP BY r.origin`).all(`${from}T00:00`, `${to}T00:00`);
-  const projects = db.prepare(`SELECT r.project, COUNT(*) AS n, SUM(e.price_cents) AS valor FROM exams e JOIN requests r ON r.id = e.request_id
-    WHERE e.status = 'realizado' AND r.origin = 'projeto' AND e.starts_at >= ? AND e.starts_at < ? GROUP BY r.project ORDER BY n DESC`).all(`${from}T00:00`, `${to}T00:00`);
-  // Ocupação só sobre o período já decorrido e desde que a app começou a ser usada;
-  // senão um ano inteiro com 2 meses de uso daria uma percentagem enganadora.
+  // Ocupação: só o período já decorrido e desde que a app começou a ser usada; senão um ano
+  // inteiro com 2 meses de uso daria uma percentagem enganadora.
   const firstUse = db.prepare('SELECT MIN(substr(starts_at, 1, 10)) FROM exams WHERE starts_at IS NOT NULL').pluck().get();
   const capFrom = firstUse && firstUse > from ? firstUse : from;
   const tomorrow = addDays(todayLocal(), 1);
   const capTo = tomorrow < to ? tomorrow : to;
   const capacity = capFrom < capTo ? capacityMinutes(getSetting(db, 'availability'), capFrom, capTo) : 0;
-  return { from, to, rows, byType: [...byType.values()].sort((a, b) => a.sort - b.sort), totals, byOrigin, projects, capacity };
+  return {
+    from, to, rows, totals, capacity, bySource,
+    byType: [...byType.values()].sort((a, b) => a.sort - b.sort),
+    byOrigin: Object.entries(byOrigin).map(([origin, n]) => ({ origin, n })).sort((a, b) => b.n - a.n),
+    projects: [...projects.entries()].map(([project, n]) => ({ project, n })).sort((a, b) => b.n - a.n),
+    medians: { wait: median(wait), report: median(toReport), siima: median(toSiima) },
+  };
 }
 
 function csvCell(v) {
@@ -79,6 +102,7 @@ export default async function statsRoutes(app, { db }) {
       }
     }
     const maxM = Math.max(0, ...months.map((m) => m.realizados));
+    const fechados = t.realizados + t.faltas;
     return send(reply, req, {
       title: 'Estatística',
       active: 'estatistica',
@@ -92,30 +116,33 @@ export default async function statsRoutes(app, { db }) {
           ${month ? html`<a href="/estatistica?ano=${year}">Ver o ano todo</a>` : ''}
         </form>
         <dl class="ledger">
-          <div><dt>Exames realizados</dt><dd>${t.realizados}</dd></div>
-          <div><dt>Receita externa estimada</dt><dd>${euros(t.receita)}<small>preço de tabela no pedido</small></dd></div>
-          <div><dt>Serviço a projetos</dt><dd>${euros(t.interno)}<small>a preço de tabela</small></dd></div>
-          <div><dt>Ocupação da agenda</dt><dd>${pct(t.minutos, s.capacity)}<small>até hoje: ${Math.round(t.minutos / 60)} h de ${Math.round(s.capacity / 60)} h</small></dd></div>
-          <div><dt>Taxa de faltas</dt><dd>${pct(t.faltas, t.faltas + t.realizados)}<small>${t.faltas} ${t.faltas === 1 ? 'falta' : 'faltas'}</small></dd></div>
-          <div class="${t.porRegistar ? 'owed' : ''}"><dt>Por registar no Siima</dt><dd>${t.porRegistar}<small>${t.porRegistar ? html`<a href="/hoje#siima">ver lista</a>` : 'em dia'}</small></dd></div>
+          <div><dt>Exames realizados</dt><dd>${t.realizados}<small>${Math.round(t.minutos / 60)} h de exames</small></dd></div>
+          <div><dt>Ocupação da agenda</dt><dd>${pct(t.minutos, s.capacity)}<small>até hoje, sobre ${Math.round(s.capacity / 60)} h de horário</small></dd></div>
+          <div><dt>Taxa de faltas</dt><dd>${pct(t.faltas, fechados)}<small>${t.faltas} ${t.faltas === 1 ? 'falta' : 'faltas'} · ${t.cancelados} ${t.cancelados === 1 ? 'cancelado' : 'cancelados'}</small></dd></div>
+          <div><dt>Espera até ao exame</dt><dd>${fmtDays(s.medians.wait)}<small>mediana, da reserva ao dia do exame</small></dd></div>
+          <div><dt>Até ao relatório validado</dt><dd>${fmtDays(s.medians.report)}<small>mediana · ${t.relatorios}/${t.realizados} validados</small></dd></div>
+          <div class="${t.porExecutar ? 'owed' : ''}"><dt>Executados no Siima</dt><dd>${t.executados}/${t.realizados}<small>${t.porExecutar ? html`<a href="/hoje#siima">${t.porExecutar} por executar</a>` : `em dia · mediana ${fmtDays(s.medians.siima)}`}</small></dd></div>
         </dl>
         <section class="sec"><div class="sec-h"><h2>Por tipo de exame</h2></div>
-          ${s.byType.length ? html`<div class="scroll-x"><table class="table num-table"><thead><tr><th>Exame</th><th>Realizados</th><th>Faltas</th><th>Agendados</th><th>Registados no Siima</th><th>Receita</th><th>Valor interno</th></tr></thead>
-          <tbody>${s.byType.map((r) => html`<tr><td>${r.name}</td><td>${r.realizados}</td><td>${r.faltas}</td><td>${r.agendados}</td><td>${r.registados}/${r.realizados}</td><td>${euros(r.receita)}</td><td>${euros(r.interno)}</td></tr>`)}</tbody>
-          <tfoot><tr><td>Total</td><td>${t.realizados}</td><td>${t.faltas}</td><td>${t.agendados}</td><td>${t.registados}/${t.realizados}</td><td>${euros(t.receita)}</td><td>${euros(t.interno)}</td></tr></tfoot></table></div>`
+          ${s.byType.length ? html`<div class="scroll-x"><table class="table num-table"><thead><tr><th>Exame</th><th>Realizados</th><th>Faltas</th><th>Por realizar</th><th>Cancelados</th><th>Horas</th><th>Executados no Siima</th></tr></thead>
+          <tbody>${s.byType.map((r) => html`<tr><td>${r.name}</td><td>${r.realizados}</td><td>${r.faltas}</td><td>${r.agendados}</td><td>${r.cancelados + r.recusados}</td><td>${(r.minutos / 60).toFixed(1).replace('.', ',')}</td><td>${r.executados}/${r.realizados}</td></tr>`)}</tbody>
+          <tfoot><tr><td>Total</td><td>${t.realizados}</td><td>${t.faltas}</td><td>${t.agendados}</td><td>${t.cancelados + t.recusados}</td><td>${(t.minutos / 60).toFixed(1).replace('.', ',')}</td><td>${t.executados}/${t.realizados}</td></tr></tfoot></table></div>`
           : emptyState('Sem exames neste período.')}
         </section>
         <div class="two-col">
-          <section class="sec"><div class="sec-h"><h2>Por origem</h2></div>${s.byOrigin.length ? html`<table class="table num-table"><tbody>
-            ${s.byOrigin.map((o) => html`<tr><td>${ORIGIN_LABEL[o.origin]}</td><td>${o.n}</td></tr>`)}</tbody></table>` : emptyState('Sem exames realizados.')}</section>
-          <section class="sec"><div class="sec-h"><h2>Projetos servidos</h2></div>${s.projects.length ? html`<table class="table num-table"><thead><tr><th>Projeto</th><th>Exames</th><th>Valor</th></tr></thead><tbody>
-            ${s.projects.map((p) => html`<tr><td>${p.project || '—'}</td><td>${p.n}</td><td>${euros(p.valor || 0)}</td></tr>`)}</tbody></table>` : emptyState('Nenhum neste período.')}</section>
+          <section class="sec"><div class="sec-h"><h2>Por origem</h2><span class="aside">exames realizados</span></div>${t.realizados ? html`<table class="table num-table">
+            <thead><tr><th>Origem</th><th>Exames</th><th>%</th></tr></thead>
+            <tbody>${s.byOrigin.map((o) => html`<tr><td>${ORIGIN_LABEL[o.origin]}</td><td>${o.n}</td><td>${pct(o.n, t.realizados)}</td></tr>`)}</tbody>
+            <thead><tr><th>Circuito</th><th></th><th></th></tr></thead>
+            <tbody>${Object.entries(s.bySource).map(([k, n]) => html`<tr><td>${SOURCE_LABEL[k]}</td><td>${n}</td><td>${pct(n, t.realizados)}</td></tr>`)}</tbody></table>` : emptyState('Sem exames realizados.')}</section>
+          <section class="sec"><div class="sec-h"><h2>Projetos e ensaios servidos</h2></div>${s.projects.length ? html`<table class="table num-table"><thead><tr><th>Projeto / estudo</th><th>Exames</th></tr></thead><tbody>
+            ${s.projects.map((p) => html`<tr><td>${p.project}</td><td>${p.n}</td></tr>`)}</tbody></table>` : emptyState('Nenhum neste período.')}</section>
         </div>
-        ${months.length ? html`<section class="sec"><div class="sec-h"><h2>Mês a mês</h2></div><div class="scroll-x"><table class="table num-table"><thead><tr><th>Mês</th><th>Realizados</th><th class="hide-m"><span class="sr">Proporção</span></th><th>Faltas</th><th>Receita</th><th>Valor interno</th><th>Ocupação</th></tr></thead>
+        ${months.length ? html`<section class="sec"><div class="sec-h"><h2>Mês a mês</h2></div><div class="scroll-x"><table class="table num-table"><thead><tr><th>Mês</th><th>Realizados</th><th class="hide-m"><span class="sr">Proporção</span></th><th>Faltas</th><th>Cancelados</th><th>Ocupação</th></tr></thead>
           <tbody>${months.map((m) => html`<tr><td><a href="/estatistica?ano=${year}&mes=${m.m}">${monthName(m.m)}</a></td><td>${m.realizados}</td>
             <td class="td-bar hide-m">${raw(`<svg class="bar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><rect class="cap" width="100" height="8"/><rect width="${maxM ? Math.round((m.realizados / maxM) * 100) : 0}" height="8"/></svg>`)}</td>
-            <td>${m.faltas}</td><td>${euros(m.receita)}</td><td>${euros(m.interno)}</td><td>${pct(m.minutos, m.capacity)}</td></tr>`)}</tbody></table></div></section>` : ''}
-        <p class="muted small">Receita = soma dos preços de tabela registados no pedido para exames realizados de origem externa ou ensaio; não substitui a faturação da UC.</p>`,
+            <td>${m.faltas}</td><td>${m.cancelados + m.recusados}</td><td>${pct(m.minutos, m.capacity)}</td></tr>`)}</tbody></table></div></section>` : ''}
+        <p class="muted small">Ocupação = horas de exames realizados sobre as horas do horário de exames no período já decorrido. Medianas calculadas sobre os exames realizados do período.</p>`,
     });
   });
 
@@ -125,15 +152,15 @@ export default async function statsRoutes(app, { db }) {
     const monthQ = Number.parseInt(str(req.query.mes), 10);
     const month = monthQ >= 1 && monthQ <= 12 ? monthQ : null;
     const { from, to } = range(year, month);
-    const rows = db.prepare(`SELECT e.id, e.starts_at, t.name AS exame, t.sap_code, r.origin, r.project, r.patient_process, e.status,
-        e.price_cents, e.minutes, e.siima_booked_at, e.siima_registered_at, rp.status AS relatorio
+    const rows = db.prepare(`SELECT e.id, e.starts_at, t.name AS exame, r.source, r.origin, r.project, e.requisition, r.patient_process, e.status,
+        e.minutes, e.siima_booked_at, e.siima_registered_at, rp.status AS relatorio
       FROM exams e JOIN exam_types t ON t.id = e.exam_type_id JOIN requests r ON r.id = e.request_id LEFT JOIN reports rp ON rp.exam_id = e.id
       WHERE e.starts_at >= ? AND e.starts_at < ? ORDER BY e.starts_at`).all(`${from}T00:00`, `${to}T00:00`);
-    const header = ['id', 'data', 'hora', 'exame', 'codigo_sap', 'origem', 'projeto', 'processo', 'estado', 'preco_eur', 'minutos', 'marcado_siima', 'registado_siima', 'relatorio'];
+    const header = ['id', 'data', 'hora', 'exame', 'circuito', 'origem', 'projeto', 'requisicao', 'processo', 'estado', 'minutos', 'marcado_siima', 'executado_siima', 'relatorio'];
     const lines = [header.join(';')];
     for (const r of rows) {
-      lines.push([r.id, r.starts_at.slice(0, 10), r.starts_at.slice(11), r.exame, r.sap_code, ORIGIN_LABEL[r.origin], r.project, r.patient_process,
-        STATUS_LABEL[r.status], (r.price_cents / 100).toFixed(2).replace('.', ','), r.minutes, r.siima_booked_at ? 'sim' : 'não',
+      lines.push([r.id, r.starts_at.slice(0, 10), r.starts_at.slice(11), r.exame, SOURCE_LABEL[r.source], ORIGIN_LABEL[r.origin], r.project, r.requisition, r.patient_process,
+        STATUS_LABEL[r.status], r.minutes, r.source === 'direto' ? (r.siima_booked_at ? 'sim' : 'não') : '',
         r.siima_registered_at ? 'sim' : 'não', r.relatorio || ''].map(csvCell).join(';'));
     }
     const name = `exames-${year}${month ? `-${pad(month)}` : ''}.csv`;
@@ -141,4 +168,3 @@ export default async function statsRoutes(app, { db }) {
     return reply.type('text/csv; charset=utf-8').header('Content-Disposition', `attachment; filename="${name}"`).send(`﻿${lines.join('\r\n')}\r\n`);
   });
 }
-

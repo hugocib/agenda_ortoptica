@@ -23,6 +23,3 @@ export function html(strings, ...values) {
   for (let i = 0; i < values.length; i++) out += esc(values[i]) + strings[i + 1];
   return new Safe(out);
 }
-
-export const euros = (cents) =>
-  (cents / 100).toLocaleString('pt-PT', { style: 'currency', currency: 'EUR', minimumFractionDigits: cents % 100 ? 2 : 0 });

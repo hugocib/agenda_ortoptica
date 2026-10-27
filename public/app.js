@@ -153,7 +153,72 @@
     });
   });
 
+  // Selecionar um valor já mostra o resultado (ex.: tipo de exame na página de reservas).
+  document.querySelectorAll('select[data-autosubmit]').forEach(function (s) {
+    s.addEventListener('change', function () { if (s.form) s.form.submit(); });
+  });
+
+  var swReady = null;
   if ('serviceWorker' in navigator && window.isSecureContext) {
-    navigator.serviceWorker.register('/sw.js').catch(function () { /* sem PWA: a app continua a funcionar */ });
+    swReady = navigator.serviceWorker.register('/sw.js').then(function () { return navigator.serviceWorker.ready; })
+      .catch(function () { return null; /* sem PWA: a app continua a funcionar */ });
+  }
+
+  // Notificações push (página «A minha conta»).
+  var pushBox = document.querySelector('[data-push]');
+  if (pushBox) {
+    var stateEl = pushBox.querySelector('[data-push-state]');
+    var onBtn = pushBox.querySelector('[data-push-on]');
+    var offBtn = pushBox.querySelector('[data-push-off]');
+    var testBtn = pushBox.querySelector('[data-push-test]');
+    var say = function (t) { stateEl.textContent = t; };
+    var show = function (subscribed) {
+      onBtn.hidden = subscribed || Notification.permission === 'denied'; offBtn.hidden = !subscribed; testBtn.hidden = !subscribed;
+      say(subscribed ? 'Ativas neste dispositivo.' : Notification.permission === 'denied'
+        ? 'Bloqueadas neste browser. Autorize as notificações nas definições do site e recarregue a página.'
+        : 'Desativadas neste dispositivo.');
+    };
+    var post = function (url, body) {
+      return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}), credentials: 'same-origin' })
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
+    };
+    var b64 = function (s) {
+      var pad = '='.repeat((4 - (s.length % 4)) % 4);
+      var raw = atob((s + pad).replace(/-/g, '+').replace(/_/g, '/'));
+      var out = new Uint8Array(raw.length);
+      for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+      return out;
+    };
+    if (!window.isSecureContext) say('Só funcionam com a app aberta em HTTPS (pelo endereço do Nginx Proxy Manager).');
+    else if (!swReady || !('PushManager' in window) || !('Notification' in window)) say('Este browser não suporta notificações push. No iPhone, instale primeiro a app no ecrã principal.');
+    else {
+      swReady.then(function (reg) {
+        if (!reg) { say('Não foi possível ativar o service worker.'); return; }
+        reg.pushManager.getSubscription().then(function (sub) { show(!!sub); });
+        onBtn.addEventListener('click', function () {
+          onBtn.disabled = true;
+          Notification.requestPermission().then(function (perm) {
+            if (perm !== 'granted') { show(false); return null; }
+            return fetch('/push/chave', { credentials: 'same-origin' }).then(function (r) { return r.json(); })
+              .then(function (k) { return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(k.key) }); })
+              .then(function (sub) { return post('/push/subscrever', sub.toJSON()); })
+              .then(function () { show(true); });
+          }).catch(function () { say('Não foi possível ativar. Tente de novo.'); })
+            .finally(function () { onBtn.disabled = false; });
+        });
+        offBtn.addEventListener('click', function () {
+          reg.pushManager.getSubscription().then(function (sub) {
+            if (!sub) return show(false);
+            return post('/push/cancelar', { endpoint: sub.endpoint }).catch(function () {}).then(function () { return sub.unsubscribe(); }).then(function () { show(false); });
+          });
+        });
+        testBtn.addEventListener('click', function () {
+          testBtn.disabled = true;
+          post('/push/teste').then(function (r) { say(r.ok ? 'Teste enviado. Deve aparecer dentro de segundos.' : 'O servidor não conseguiu enviar. Veja os registos do servidor.'); })
+            .catch(function () { say('O servidor não respondeu.'); })
+            .finally(function () { testBtn.disabled = false; });
+        });
+      });
+    }
   }
 })();

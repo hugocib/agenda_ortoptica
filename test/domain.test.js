@@ -55,9 +55,12 @@ test('freeSlots lista as horas possíveis', () => {
 });
 
 test('máquina de estados', () => {
-  assert.equal(canTransition('realizado', 'agendado', 'ortoptista'), true);
-  assert.equal(canTransition('realizado', 'agendado', 'secretariado'), false);
-  assert.equal(canTransition('realizado', 'por_agendar', 'ortoptista'), false);
+  assert.equal(canTransition('realizado', 'agendado'), true);
+  assert.equal(canTransition('realizado', 'por_agendar'), false);
+  assert.equal(canTransition('confirmar', 'pendente', 'secretariado'), true);
+  assert.equal(canTransition('realizado', 'pendente', 'secretariado'), false); // tem de ser confirmada antes
+  assert.equal(canTransition('desmarcar', 'agendado', 'direto'), true);
+  assert.equal(canTransition('desmarcar', 'agendado', 'secretariado'), false); // reservas canceladas, não «por agendar»
   assert.equal(canTransition('cancelar', 'realizado', 'ortoptista'), false);
 });
 
@@ -119,7 +122,7 @@ test('ICS sem dados de doentes e com datas em UTC', () => {
   assert.ok(ics.includes('\r\n'));
 });
 
-import { dayTape, freeIntervals, fmtDuration } from '../src/domain/tape.js';
+import { dayTape, freeIntervals, fmtDuration, periods } from '../src/domain/tape.js';
 import { examTrack } from '../src/domain/status.js';
 
 test('fita do dia: livres entre exames e bloqueios, dentro do horário', () => {
@@ -147,14 +150,44 @@ test('fita do dia: livres entre exames e bloqueios, dentro do horário', () => {
 test('percurso do exame: estações e resumo', () => {
   const today = '2030-01-08';
   assert.equal(examTrack({ status: 'por_agendar' }, today).summary, 'Por agendar');
+  // Circuito do secretariado: 4 estações, a primeira é a confirmação
+  const p = examTrack({ status: 'pendente', source: 'secretariado', starts_at: '2030-01-10T09:00' }, today);
+  assert.equal(p.stations.length, 4);
+  assert.deepEqual(p.states, ['next', 'todo', 'todo', 'todo']);
+  assert.equal(p.summary, 'Por confirmar');
+  assert.equal(examTrack({ status: 'agendado', source: 'secretariado', starts_at: '2030-01-10T09:00' }, today).summary, 'Confirmado');
+  assert.equal(examTrack({ status: 'agendado', source: 'secretariado', starts_at: '2030-01-10T09:00', change_kind: 'mover' }, today).summary, 'Alteração de hora pedida');
+  assert.equal(examTrack({ status: 'recusado', source: 'secretariado' }, today).tone, 'fail');
   const a = examTrack({ status: 'agendado', starts_at: '2030-01-10T09:00' }, today);
   assert.deepEqual(a.states, ['done', 'next', 'todo', 'todo', 'todo']);
   assert.equal(a.summary, 'Por marcar no Siima');
   assert.equal(examTrack({ status: 'agendado', starts_at: '2030-01-08T09:00', siima_booked_at: 'x' }, today).summary, 'Por realizar');
   const r = examTrack({ status: 'realizado', starts_at: '2030-01-07T09:00', siima_booked_at: 'x', report_status: 'rascunho' }, today);
   assert.deepEqual(r.states, ['done', 'done', 'done', 'draft', 'next']);
-  assert.equal(r.summary, 'Falta relatório em rascunho e registo no Siima');
+  assert.equal(r.summary, 'Falta relatório em rascunho e executar no Siima');
   const f = examTrack({ status: 'realizado', starts_at: '2030-01-07T09:00', siima_booked_at: 'x', report_status: 'validado', siima_registered_at: 'y' }, today);
   assert.equal(f.summary, 'Concluído');
   assert.equal(examTrack({ status: 'faltou', starts_at: '2030-01-07T09:00' }, today).tone, 'fail');
+});
+
+test('fita: hora proposta numa alteração ocupa tempo; períodos manhã/tarde com almoço', () => {
+  const windows = [{ start: '09:00', end: '13:00' }, { start: '14:00', end: '17:00' }];
+  const hold = { id: 9, type_name: 'OCT', starts_at: '2030-01-09T09:00', change_starts_at: '2030-01-08T14:00', change_ends_at: '2030-01-08T14:30' };
+  const exam = { id: 1, status: 'agendado', starts_at: '2030-01-08T09:00', ends_at: '2030-01-08T10:30' };
+  const t = dayTape({ date: '2030-01-08', windows, exams: [exam], holds: [hold], step: 15 });
+  assert.ok(t.items.some((i) => i.kind === 'hold' && i.start === '14:00'));
+  assert.equal(t.freeMinutes, 150 + 150); // manhã 10:30–13:00, tarde 14:30–17:00
+  const ps = periods(t, windows);
+  assert.deepEqual(ps.map((x) => x.label), ['Manhã', 'Tarde']);
+  assert.deepEqual(ps[1].pause, { start: '13:00', end: '14:00' });
+  assert.ok(ps[0].items.every((i) => i.start < '13:00'));
+  assert.ok(ps[1].items.some((i) => i.kind === 'hold'));
+});
+
+test('vagas não atravessam o almoço', () => {
+  const lunchCtx = { ...ctx, availability: [{ weekday: 2, start: '09:00', end: '13:00' }, { weekday: 2, start: '14:00', end: '17:00' }] };
+  assert.equal(checkSlot(`${TUE}T12:30`, 60, false, lunchCtx).reason, 'fora_horario');
+  assert.equal(checkSlot(`${TUE}T14:00`, 60, false, lunchCtx).ok, true);
+  const [day] = freeSlots({ fromDate: TUE, days: 1, minutes: 60, isElectro: false, ...lunchCtx });
+  assert.ok(!day.times.includes('12:15') && day.times.includes('12:00') && day.times.includes('14:00'));
 });

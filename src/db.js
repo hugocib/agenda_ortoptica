@@ -30,38 +30,50 @@ export function migrate(db) {
   for (const f of files) {
     if (applied.has(f)) continue;
     const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, f), 'utf8');
-    db.transaction(() => {
-      db.exec(sql);
-      db.prepare('INSERT INTO schema_migrations (version) VALUES (?)').run(f);
-    })();
+    // Migrações que reconstroem tabelas (SQLite não altera CHECKs) correm com as chaves externas
+    // desligadas e confirmam no fim que nenhuma referência ficou partida.
+    const rebuild = sql.includes('-- reconstroi-tabelas');
+    if (rebuild) db.pragma('foreign_keys = OFF');
+    try {
+      db.transaction(() => {
+        db.exec(sql);
+        if (rebuild) {
+          const broken = db.pragma('foreign_key_check');
+          if (broken.length) throw new Error(`Migração ${f}: ${broken.length} referências partidas`);
+        }
+        db.prepare('INSERT INTO schema_migrations (version) VALUES (?)').run(f);
+      })();
+    } finally {
+      if (rebuild) db.pragma('foreign_keys = ON');
+    }
   }
 }
 
-// Preçário proposto no plano de negócios (out. 2026). Editável em Administração.
-// minutos = duração com preparação; preços em cêntimos.
+// Tipos de exame iniciais. minutos = duração com preparação. Editáveis em Administração.
 export const DEFAULT_EXAM_TYPES = [
-  ['erg', 'ERG campo total (ISCEV)', '70320', 90, 15000, 1, 'erg'],
-  ['erg_pattern', 'ERG pattern / multifocal', '', 75, 16000, 1, 'erg_pattern'],
-  ['pev', 'PEV pattern / flash', '63310', 60, 14500, 1, 'pev'],
-  ['eog', 'EOG', '70310', 75, 14000, 1, 'eog'],
-  ['oct', 'OCT segmento posterior', '70279', 20, 9000, 0, 'oct'],
-  ['oct_ant', 'OCT segmento anterior', '70278', 20, 9000, 0, 'oct'],
-  ['micro', 'Microperimetria (MP-3S)', '', 30, 11000, 0, 'microperimetria'],
-  ['csf', 'Sensibilidade ao contraste (Metropsis)', '70412', 40, 6500, 0, 'metropsis'],
-  ['ortoptica', 'Avaliação ortóptica / visão binocular', '', 40, 4500, 0, 'ortoptica'],
-  ['retino', 'Retinografia', '', 15, 3500, 0, 'retinografia'],
-  ['eyetracking', 'Oculomotricidade por eye-tracking (GazeLab)', '', 40, 7000, 0, 'eyetracking'],
-  ['ensaio', 'Visita de ensaio clínico', '', 120, 30000, 0, 'generico'],
-  ['refracao_fmri', 'Refração e correção para fMRI', '', 20, 3500, 0, 'refracao'],
-  ['aval_visual', 'Avaliação visual completa (participante)', '', 60, 9000, 0, 'ortoptica'],
+  ['erg', 'ERG campo total (ISCEV)', 90, 1, 'erg'],
+  ['erg_pattern', 'ERG pattern / multifocal', 75, 1, 'erg_pattern'],
+  ['pev', 'PEV pattern / flash', 60, 1, 'pev'],
+  ['eog', 'EOG', 75, 1, 'eog'],
+  ['oct', 'OCT segmento posterior', 20, 0, 'oct'],
+  ['oct_ant', 'OCT segmento anterior', 20, 0, 'oct'],
+  ['micro', 'Microperimetria (MP-3S)', 30, 0, 'microperimetria'],
+  ['csf', 'Sensibilidade ao contraste (Metropsis)', 40, 0, 'metropsis'],
+  ['ortoptica', 'Avaliação ortóptica / visão binocular', 40, 0, 'ortoptica'],
+  ['retino', 'Retinografia', 15, 0, 'retinografia'],
+  ['eyetracking', 'Oculomotricidade por eye-tracking (GazeLab)', 40, 0, 'eyetracking'],
+  ['ensaio', 'Visita de ensaio clínico', 120, 0, 'generico'],
+  ['refracao_fmri', 'Refração e correção para fMRI', 20, 0, 'refracao'],
+  ['aval_visual', 'Avaliação visual completa (participante)', 60, 0, 'ortoptica'],
 ];
 
 export const DEFAULT_SETTINGS = {
   // weekday: 1 = segunda ... 5 = sexta
-  availability: [
-    { weekday: 2, start: '09:00', end: '12:30' },
-    { weekday: 4, start: '09:00', end: '12:30' },
-  ],
+  // Manhã e tarde são janelas separadas; o intervalo entre elas é o almoço (nunca tem vagas).
+  availability: [2, 4].flatMap((weekday) => [
+    { weekday, start: '09:00', end: '13:00' },
+    { weekday, start: '14:00', end: '17:00' },
+  ]),
   slot_step_min: 15,
   max_electro_per_day: 2,
   horizon_weeks: 8,
@@ -71,18 +83,21 @@ export const DEFAULT_SETTINGS = {
   report_medical_line: true,
   norms: {},
   theme: 'laboratorio',
+  // Nomes de quem reserva pelo link do secretariado (lista curta, escolhida ao reservar).
+  booking_names: [],
 };
 
 export function seed(db) {
   const count = db.prepare('SELECT COUNT(*) FROM exam_types').pluck().get();
   if (count === 0) {
-    const ins = db.prepare(`INSERT INTO exam_types (code, name, sap_code, minutes, price_cents, is_electro, report_template, sort)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+    const ins = db.prepare(`INSERT INTO exam_types (code, name, minutes, is_electro, report_template, sort)
+      VALUES (?, ?, ?, ?, ?, ?)`);
     db.transaction(() => DEFAULT_EXAM_TYPES.forEach((t, i) => ins.run(...t, i)))();
   }
   const insSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) insSetting.run(k, JSON.stringify(v));
   insSetting.run('ics_token', JSON.stringify(crypto.randomBytes(24).toString('base64url')));
+  insSetting.run('booking_token', JSON.stringify(crypto.randomBytes(18).toString('base64url')));
 }
 
 export function getSetting(db, key) {

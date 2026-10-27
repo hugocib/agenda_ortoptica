@@ -23,7 +23,7 @@ function loginPage(req, { error = '', username = '', next = '' } = {}) {
         <label>Palavra-passe<input name="password" type="password" autocomplete="current-password" required${username ? html` autofocus` : ''}></label>
         <button class="btn primary big" type="submit">Entrar</button>
       </form>
-      <p class="gate-foot">Sem acesso ou palavra-passe esquecida? Peça ao ortoptista uma palavra-passe temporária.</p>
+      <p class="gate-foot">O secretariado não precisa de entrar: usa o link de reservas.</p>
     </div>`,
   };
 }
@@ -62,24 +62,35 @@ export default async function authRoutes(app, { db, config, limiter }) {
   const contaPage = (req, error = '') => ({
     title: 'A minha conta',
     active: 'conta',
-    body: html`${pageHead('A minha conta', { sub: html`${req.user.name} · <span class="mono">${req.user.username}</span> · ${req.user.role === 'ortoptista' ? 'Ortoptista' : 'Secretariado'}` })}
+    body: html`${pageHead('A minha conta', { sub: html`${req.user.name} · utilizador <span class="mono">${req.user.username}</span>` })}
       ${flash(req.query, req)}
-      ${req.user.mustChangePassword ? html`<div class="notice warn"><p>Defina uma palavra-passe sua antes de continuar.</p></div>` : ''}
+      ${req.user.mustChangePassword ? html`<div class="notice warn"><p>Defina uma palavra-passe sua antes de continuar: <a href="#password">alterar palavra-passe</a>.</p></div>` : ''}
       ${error ? html`<div class="notice err" role="alert">${error}</div>` : ''}
-      <section class="sec"><div class="sec-h"><h2>Alterar palavra-passe</h2></div>
-        <form method="post" action="/conta" class="stack sheet narrow">
-          <label>Palavra-passe atual<input type="password" name="current" autocomplete="current-password" required></label>
-          <label>Nova palavra-passe <span class="opt">mínimo 10 caracteres; uma frase é mais fácil de lembrar</span><input type="password" name="password" autocomplete="new-password" minlength="10" required></label>
-          <label>Repetir nova palavra-passe<input type="password" name="password2" autocomplete="new-password" minlength="10" required></label>
-          <div><button class="btn primary" type="submit">Alterar palavra-passe</button></div>
-        </form>
-      </section>
       <section class="sec"><div class="sec-h"><h2>Aspeto</h2><span class="aside"><a href="/aparencia">Ver e escolher temas</a></span></div>
         <p class="sec-note">Tema atual: <b>${themeById(req.look.theme).name}</b>. O modo claro/escuro fica guardado neste dispositivo.</p>
         <form method="post" action="/aparencia/modo" class="toolbar">
           <input type="hidden" name="back" value="/conta">
           <span class="seg" role="radiogroup" aria-label="Modo neste dispositivo">${['auto', 'claro', 'escuro'].map((m) => html`<label><input type="radio" name="modo" value="${m}"${req.look.mode === m ? raw(' checked') : ''}> ${{ auto: 'Automático', claro: 'Claro', escuro: 'Escuro' }[m]}</label>`)}</span>
           <button class="btn" type="submit">Aplicar</button>
+        </form>
+      </section>
+      <section class="sec" id="notificacoes"><div class="sec-h"><h2>Notificações</h2></div>
+        <p class="sec-note">Aviso no telemóvel ou no computador quando o secretariado faz uma reserva ou pede uma alteração. Tem de ser ativado em cada dispositivo. As notificações só dizem o exame, a hora e quem reservou.</p>
+        <div class="push-box" data-push>
+          <p class="push-state" data-push-state>As notificações precisam de JavaScript e de a app ser aberta em HTTPS.</p>
+          <div class="form-actions">
+            <button type="button" class="btn primary" data-push-on hidden>Ativar neste dispositivo</button>
+            <button type="button" class="btn" data-push-test hidden>Enviar teste</button>
+            <button type="button" class="btn ghost" data-push-off hidden>Desativar neste dispositivo</button>
+          </div>
+        </div>
+      </section>
+      <section class="sec" id="password"><div class="sec-h"><h2>Alterar palavra-passe</h2></div>
+        <form method="post" action="/conta" class="stack sheet narrow">
+          <label>Palavra-passe atual<input type="password" name="current" autocomplete="current-password" required></label>
+          <label>Nova palavra-passe <span class="opt">mínimo 10 caracteres; uma frase é mais fácil de lembrar</span><input type="password" name="password" autocomplete="new-password" minlength="10" required></label>
+          <label>Repetir nova palavra-passe<input type="password" name="password2" autocomplete="new-password" minlength="10" required></label>
+          <div><button class="btn primary" type="submit">Alterar palavra-passe</button></div>
         </form>
       </section>
       <section class="sec quiet" id="instalar" hidden><div class="sec-h"><h2>Instalar como app</h2></div>

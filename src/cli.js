@@ -1,5 +1,5 @@
 // Linha de comandos para administração sem interface:
-//   node src/cli.js criar-utilizador <utilizador> "<Nome>" <ortoptista|secretariado>
+//   node src/cli.js criar-utilizador <utilizador> "<Nome>" [ortoptista]
 //   node src/cli.js nova-password <utilizador>
 //   node src/cli.js backup
 //   node src/cli.js utilizadores
@@ -19,9 +19,10 @@ function fail(msg) {
 
 try {
   if (cmd === 'criar-utilizador') {
-    const [username, name, role] = args;
-    if (!username || !name || !['ortoptista', 'secretariado'].includes(role)) {
-      fail('Uso: criar-utilizador <utilizador> "<Nome>" <ortoptista|secretariado>');
+    // Só há contas de ortoptista: o secretariado usa o link de reservas.
+    const [username, name, role = 'ortoptista'] = args;
+    if (!username || !name || role !== 'ortoptista') {
+      fail('Uso: criar-utilizador <utilizador> "<Nome>" [ortoptista]');
     }
     if (!/^[A-Za-z0-9._-]{2,40}$/.test(username)) fail('Utilizador inválido (letras, números, . _ -).');
     if (db.prepare('SELECT 1 FROM users WHERE username = ?').get(username)) fail('Esse utilizador já existe.');

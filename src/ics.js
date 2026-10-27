@@ -25,9 +25,9 @@ export function buildIcs({ exams, blocks, host }) {
   for (const e of exams) {
     lines.push('BEGIN:VEVENT', `UID:exame-${e.id}@${host}`, `DTSTAMP:${now}`,
       `DTSTART:${fmt(localToUtc(e.starts_at))}`, `DTEND:${fmt(localToUtc(e.ends_at))}`,
-      `SUMMARY:${escText(`${e.type_name}${e.origin === 'projeto' ? ' (projeto)' : e.origin === 'ensaio' ? ' (ensaio)' : ''}`)}`,
+      `SUMMARY:${escText(`${e.status === 'pendente' ? '[por confirmar] ' : ''}${e.type_name}${e.origin === 'projeto' ? ' (projeto)' : e.origin === 'ensaio' ? ' (ensaio)' : ''}`)}`,
       `DESCRIPTION:${escText(`Exame n.º ${e.id} · ${e.status}`)}`,
-      e.status === 'realizado' ? 'STATUS:CONFIRMED' : 'STATUS:TENTATIVE', 'END:VEVENT');
+      e.status === 'pendente' ? 'STATUS:TENTATIVE' : 'STATUS:CONFIRMED', 'END:VEVENT');
   }
   for (const b of blocks) {
     lines.push('BEGIN:VEVENT', `UID:bloqueio-${b.id}@${host}`, `DTSTAMP:${now}`,

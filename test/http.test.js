@@ -36,19 +36,20 @@ test('CSRF: POST de outra origem é recusado', async () => {
   assert.equal(r.statusCode, 403);
 });
 
-test('secretariado não acede a estatística, administração nem relatórios', async () => {
+test('contas antigas do secretariado já não entram nas páginas (usam o link)', async () => {
   const { app } = await makeApp();
   const cookie = await login(app, 'sec');
-  assert.equal((await get(app, '/estatistica', cookie)).statusCode, 403);
-  assert.equal((await get(app, '/admin', cookie)).statusCode, 403);
-  assert.equal((await get(app, '/admin/utilizadores', cookie)).statusCode, 403);
-  assert.equal((await get(app, '/exames/1/relatorio', cookie)).statusCode, 403);
+  for (const url of ['/hoje', '/estatistica', '/admin', '/pedidos', '/exames/1/relatorio']) {
+    const r = await get(app, url, cookie);
+    assert.equal(r.statusCode, 403, url);
+  }
+  assert.match((await get(app, '/hoje', cookie)).body, /link de reservas/);
 });
 
-test('fluxo completo: pedido → agendar → Siima → realizado → relatório → registo → estatística', async () => {
+test('fora do circuito: pedido → agendar → marcado no Siima → realizado → relatório → executado → estatística', async () => {
   const { app, db } = await makeApp();
-  const sec = await login(app, 'sec');
   const hugo = await login(app, 'hugo');
+  const sec = hugo;
   const types = Object.fromEntries(db.prepare('SELECT code, id FROM exam_types').all().map((t) => [t.code, String(t.id)]));
 
   // Validação: sem processo e sem exames
@@ -93,9 +94,8 @@ test('fluxo completo: pedido → agendar → Siima → realizado → relatório 
   // Hora inválida
   assert.match((await post(app, `/exames/${exam3}/agendar`, sec, { starts_at: 'amanhã' })).headers.location, /err=hora_invalida/);
 
-  // Secretariado marca no Siima; não pode pôr «realizado»
+  // Marca no Siima
   assert.match((await post(app, `/exames/${examId}/siima-marcado`, sec, { back: '/hoje' })).headers.location, /msg=siima_marcado/);
-  assert.match((await post(app, `/exames/${examId}/realizado`, sec, { back: '/hoje' })).headers.location, /err=estado/);
   // Repetir a mesma ação (duplo clique) não estraga nada
   assert.match((await post(app, `/exames/${examId}/siima-marcado`, sec, { back: '/hoje' })).headers.location, /err=estado/);
 
@@ -105,10 +105,10 @@ test('fluxo completo: pedido → agendar → Siima → realizado → relatório 
   const yesterday = addDays(todayLocal(), -1);
   db.prepare("UPDATE exams SET starts_at = ? || substr(starts_at, 11), ends_at = ? || substr(ends_at, 11) WHERE id = ?").run(yesterday, yesterday, examId);
 
-  // Ortoptista: realizado → aparece em «por registar no Siima»
+  // Ortoptista: realizado → aparece em «por executar no Siima»
   assert.match((await post(app, `/exames/${examId}/realizado`, hugo, { back: '/hoje' })).headers.location, /msg=realizado/);
   const today = await get(app, '/hoje', hugo);
-  assert.match(today.body, /por registar no Siima/);
+  assert.match(today.body, /por executar no Siima/);
 
   // Relatório: número inválido devolve o formulário com erro, sem perder o resto
   const badRep = await post(app, `/exames/${examId}/relatorio`, hugo, { 'f.da3_b_amp.OD': '41x', 'f.da3_b_amp.OE': '398', acao: 'guardar' });
@@ -153,7 +153,8 @@ test('fluxo completo: pedido → agendar → Siima → realizado → relatório 
   const year = yesterday.slice(0, 4);
   const stats = await get(app, `/estatistica?ano=${year}`, hugo);
   assert.equal(stats.statusCode, 200);
-  assert.match(stats.body, /150\s*€/);
+  assert.ok(!/€/.test(stats.body), 'sem valores financeiros');
+  assert.match(stats.body, /Executados no Siima/);
   const csv = await get(app, `/estatistica/exames.csv?ano=${year}`, hugo);
   assert.ok(csv.body.startsWith('﻿'));
   assert.ok(!csv.body.includes('script')); // nome do doente não vai no CSV
@@ -173,13 +174,13 @@ test('fluxo completo: pedido → agendar → Siima → realizado → relatório 
 
 test('redirecionamento só para caminhos locais', async () => {
   const { app, db } = await makeApp();
-  const sec = await login(app, 'sec');
+  const sec = await login(app, 'hugo');
   const id = db.prepare('SELECT id FROM exam_types LIMIT 1').pluck().get();
   const c = await post(app, '/pedidos', sec, { patient_process: '1', origin: 'externo', priority: 'normal', exam_type_id: String(id) });
   const examId = Number(c.headers.location.split('/')[2]);
   const r = await post(app, `/exames/${examId}/cancelar`, sec, { back: 'https://evil.example/' });
   assert.match(r.headers.location, new RegExp(`^/exames/${examId}\\?msg=cancelado`));
-  const l = await post(app, '/login', null, { username: 'sec', password: PW, next: '//evil.example' });
+  const l = await post(app, '/login', null, { username: 'hugo', password: PW, next: '//evil.example' });
   assert.equal(l.headers.location, '/hoje');
 });
 
@@ -196,8 +197,8 @@ test('cabeçalhos de segurança e no-store em páginas com dados', async () => {
 
 test('primeiro acesso obriga a mudar a palavra-passe', async () => {
   const { app, db } = await makeApp();
-  db.prepare("UPDATE users SET must_change_password = 1 WHERE username = 'sec'").run();
-  const cookie = await login(app, 'sec');
+  db.prepare("UPDATE users SET must_change_password = 1 WHERE username = 'hugo'").run();
+  const cookie = await login(app, 'hugo');
   const r = await get(app, '/hoje', cookie);
   assert.equal(r.headers.location, '/conta');
   const weak = await post(app, '/conta', cookie, { current: PW, password: 'curta', password2: 'curta' });
@@ -209,3 +210,13 @@ test('primeiro acesso obriga a mudar a palavra-passe', async () => {
   assert.equal((await get(app, '/hoje', cookie)).statusCode, 302); // sessão antiga terminada
 });
 
+
+test('todas as páginas principais abrem sem erro', async () => {
+  const { app } = await makeApp();
+  const cookie = await login(app, 'hugo');
+  for (const url of ['/hoje', '/agenda', '/pedidos', '/pedidos?f=todos', '/pedidos/novo', '/bloqueios', '/estatistica', '/admin', '/admin/exames',
+    '/admin/utilizadores', '/admin/normativos', '/conta', '/aparencia', '/offline', '/manifest.webmanifest', '/temas.css']) {
+    const r = await get(app, url, cookie);
+    assert.equal(r.statusCode, 200, url);
+  }
+});

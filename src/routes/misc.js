@@ -9,21 +9,20 @@ import { addDays, todayLocal } from '../time.js';
 import { html } from '../html.js';
 import { ASSET_VERSION, MARK } from '../ui.js';
 import { send } from './util.js';
+import { themeById } from '../themes.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SW_SOURCE = fs.readFileSync(path.join(here, '..', '..', 'public', 'sw.js'), 'utf8');
 
-const MANIFEST = {
+const MANIFEST_BASE = {
   id: '/hoje',
   name: 'Ortóptica — agenda e exames',
   short_name: 'Ortóptica',
-  description: 'Agenda, registo no Siima e relatórios de exames de ortóptica e função visual.',
+  description: 'Agenda, reservas do secretariado, registo no Siima e relatórios de exames de ortóptica e função visual.',
   lang: 'pt-PT',
   start_url: '/hoje',
   scope: '/',
   display: 'standalone',
-  background_color: '#F3F5F4',
-  theme_color: '#FFFFFF',
   categories: ['medical', 'productivity'],
   icons: [
     { src: '/static/icon-192.png', sizes: '192x192', type: 'image/png' },
@@ -48,8 +47,11 @@ export default async function miscRoutes(app, { db }) {
     return { ok: true };
   });
 
-  app.get('/manifest.webmanifest', async (req, reply) =>
-    reply.type('application/manifest+json').header('Cache-Control', 'no-cache').send(JSON.stringify(MANIFEST)));
+  app.get('/manifest.webmanifest', async (req, reply) => {
+    const t = themeById(getSetting(db, 'theme'));
+    const manifest = { ...MANIFEST_BASE, background_color: t.lightVars['--paper'], theme_color: t.lightVars['--top-bg'] };
+    return reply.type('application/manifest+json').header('Cache-Control', 'no-cache').send(JSON.stringify(manifest));
+  });
 
   // O service worker tem de ser servido da raiz para controlar todo o site.
   // A versão entra no ficheiro: ao atualizar a app, o browser instala o novo SW e limpa a cache antiga.
@@ -72,7 +74,7 @@ export default async function miscRoutes(app, { db }) {
     const today = todayLocal();
     const from = `${addDays(today, -30)}T00:00`;
     const to = `${addDays(today, 180)}T00:00`;
-    const exams = examsWhere(db, "e.status IN ('agendado','realizado') AND e.starts_at >= ? AND e.starts_at < ?", [from, to], 'e.starts_at', 2000);
+    const exams = examsWhere(db, "e.status IN ('pendente','agendado','realizado') AND e.starts_at >= ? AND e.starts_at < ?", [from, to], 'e.starts_at', 2000);
     const blocks = db.prepare('SELECT * FROM blocks WHERE ends_at >= ? AND starts_at < ?').all(from, to);
     const host = String(req.headers.host || 'ortoptica.local').replace(/:\d+$/, '');
     return reply.type('text/calendar; charset=utf-8').send(buildIcs({ exams, blocks, host }));

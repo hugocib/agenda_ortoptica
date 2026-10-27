@@ -45,3 +45,28 @@ self.addEventListener('fetch', (event) => {
   }
   // Tudo o resto vai diretamente à rede.
 });
+
+// Notificações push: só texto sem dados de doentes (tipo de exame, hora, quem reservou).
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch { data = { title: 'Ortóptica', body: event.data && event.data.text() }; }
+  event.waitUntil(self.registration.showNotification(data.title || 'Ortóptica', {
+    body: data.body || '',
+    tag: data.tag,
+    renotify: Boolean(data.tag),
+    icon: '/static/icon-192.png',
+    badge: '/static/icon-192.png',
+    data: { url: data.url || '/hoje' },
+  }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = new URL(event.notification.data?.url || '/hoje', self.location.origin).href;
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((wins) => {
+    for (const w of wins) {
+      if (w.url.startsWith(self.location.origin) && 'focus' in w) { w.navigate(url); return w.focus(); }
+    }
+    return self.clients.openWindow(url);
+  }));
+});

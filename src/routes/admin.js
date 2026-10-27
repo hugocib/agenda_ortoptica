@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
-import { html, euros } from '../html.js';
+import { html } from '../html.js';
 import { audit, getSetting, setSetting } from '../db.js';
 import { destroyUserSessions, generatePassword, hashPassword } from '../auth.js';
 import { isBackupName, listBackups, runBackup } from '../backup.js';
@@ -20,21 +20,12 @@ function tabs(active) {
 
 const ExamTypeSchema = z.object({
   name: z.string().trim().min(2).max(120),
-  sap_code: z.string().trim().max(30),
   minutes: z.coerce.number().int().min(5).max(480),
-  price: z.string().trim(),
   is_electro: z.enum(['0', '1']),
   report_template: z.enum(TEMPLATE_KEYS),
   active: z.enum(['0', '1']),
   sort: z.coerce.number().int().min(0).max(999),
 });
-
-function parsePrice(s) {
-  const p = parseNumber(s);
-  if (p.empty) return 0;
-  if (p.error || p.value < 0 || p.value > 100000) return null;
-  return Math.round(p.value * 100);
-}
 
 export default async function adminRoutes(app, { db, config }) {
   app.addHook('preHandler', async (req, reply) => {
@@ -44,16 +35,28 @@ export default async function adminRoutes(app, { db, config }) {
   // ---------- Geral ----------
   app.get('/admin', async (req, reply) => {
     const availability = getSetting(db, 'availability');
-    const rows = [...availability, ...Array(Math.max(0, 6 - availability.length)).fill({ weekday: '', start: '', end: '' })];
+    const rows = [...availability, ...Array(Math.max(2, 12 - availability.length)).fill({ weekday: '', start: '', end: '' })];
     const header = getSetting(db, 'report_header');
     const icsToken = getSetting(db, 'ics_token');
     const host = req.headers.host;
+    const bookingUrl = `${req.protocol}://${host}/r/${getSetting(db, 'booking_token')}`;
+    const names = getSetting(db, 'booking_names') || [];
     const backups = listBackups(config.backupDir).slice(0, 15);
     return send(reply, req, {
       title: 'Administração',
       active: 'admin',
       body: html`${pageHead('Administração')}${tabs('geral')}${flash(req.query, req)}
-        <section class="sec"><div class="sec-h"><h2>Horário de exames externos</h2></div>
+        <section class="sec"><div class="sec-h"><h2>Link de reservas do secretariado</h2></div>
+          <p>Envie este endereço ao secretariado. Quem o tiver vê as vagas livres e reserva sem conta nem dados de doentes; as reservas ficam por confirmar até as confirmar em <a href="/hoje">Hoje</a>.</p>
+          <p><button type="button" class="copy" data-copy="${bookingUrl}" aria-label="Copiar link de reservas">${bookingUrl}${icon('copiar', 'ico xs')}</button> <a href="${bookingUrl}" target="_blank" rel="noopener">Abrir</a></p>
+          <form method="post" action="/admin/reservas" class="stack sheet narrow">
+            <label>Quem pode reservar <span class="opt">um nome por linha; aparece numa lista ao reservar. Vazio = escrevem o nome.</span><textarea name="booking_names" rows="4" maxlength="800">${names.join('\n')}</textarea></label>
+            <div><button class="btn primary" type="submit">Guardar nomes</button></div>
+          </form>
+          <form method="post" action="/admin/reservas/link" class="inline"><button class="btn" data-confirm="Criar um link novo? O atual deixa de funcionar e terá de enviar o novo ao secretariado.">Gerar link novo</button></form>
+        </section>
+        <section class="sec"><div class="sec-h"><h2>Horário de exames</h2></div>
+          <p class="sec-note">Uma linha por período. Para manhã e tarde, ponha duas linhas para o mesmo dia (p. ex. 09:00–13:00 e 14:00–17:00): o intervalo entre elas é o almoço e nunca tem vagas.</p>
           <form method="post" action="/admin/horario" class="stack">
             <table class="table compact-table"><thead><tr><th>Dia</th><th>Início</th><th>Fim</th></tr></thead><tbody>
             ${rows.map((w) => html`<tr>
@@ -138,6 +141,19 @@ export default async function adminRoutes(app, { db, config }) {
     return reply.redirect('/admin?msg=guardado');
   });
 
+  app.post('/admin/reservas', async (req, reply) => {
+    const names = [...new Set(str(req.body?.booking_names).split(/\r?\n/).map((l) => l.trim().slice(0, 60)).filter((l) => l.length >= 2))].slice(0, 30);
+    setSetting(db, 'booking_names', names);
+    audit(db, req.user.id, 'alterar_nomes_reserva', 'definicoes', null, { n: names.length });
+    return reply.redirect('/admin?msg=guardado');
+  });
+
+  app.post('/admin/reservas/link', async (req, reply) => {
+    setSetting(db, 'booking_token', crypto.randomBytes(18).toString('base64url'));
+    audit(db, req.user.id, 'regenerar_link_reservas', 'definicoes');
+    return reply.redirect('/admin?msg=link');
+  });
+
   app.post('/admin/ics', async (req, reply) => {
     setSetting(db, 'ics_token', crypto.randomBytes(24).toString('base64url'));
     audit(db, req.user.id, 'regenerar_ics', 'definicoes');
@@ -169,9 +185,7 @@ export default async function adminRoutes(app, { db, config }) {
     const types = db.prepare('SELECT * FROM exam_types ORDER BY sort, name').all();
     const row = (t) => html`<form method="post" action="${t ? `/admin/exames/${t.id}` : '/admin/exames'}" class="type-row${t && !t.active ? ' inactive' : ''}">
       <input name="name" value="${t?.name || ''}" required maxlength="120" aria-label="Nome" placeholder="Nome do exame">
-      <input name="sap_code" value="${t?.sap_code || ''}" maxlength="30" aria-label="Código SAP" placeholder="SAP">
       <input name="minutes" type="number" min="5" max="480" value="${t?.minutes ?? 30}" aria-label="Minutos" class="num">
-      <input name="price" inputmode="decimal" value="${t ? fmtNum(t.price_cents / 100) : ''}" aria-label="Preço (€)" class="num" placeholder="€">
       <select name="is_electro" aria-label="Eletrofisiologia"><option value="0">—</option><option value="1"${t?.is_electro ? html` selected` : ''}>Eletro</option></select>
       <select name="report_template" aria-label="Modelo de relatório">${TEMPLATE_KEYS.map((k) => html`<option value="${k}"${(t?.report_template || 'generico') === k ? html` selected` : ''}>${TEMPLATES[k].title}</option>`)}</select>
       <select name="active" aria-label="Ativo"><option value="1">Ativo</option><option value="0"${t && !t.active ? html` selected` : ''}>Inativo</option></select>
@@ -183,8 +197,8 @@ export default async function adminRoutes(app, { db, config }) {
       active: 'admin',
       body: html`${pageHead('Administração')}${tabs('exames')}${flash(req.query, req)}
         <section class="sec">
-          <p class="muted">Duração inclui preparação. Mudar o preço não altera exames já pedidos (o preço fica registado no pedido). Para deixar de usar um exame, ponha «Inativo» em vez de o apagar.</p>
-          <div class="type-head"><span>Nome</span><span>SAP</span><span>Min</span><span>€</span><span>Tipo</span><span>Relatório</span><span>Estado</span><span>Ordem</span><span></span></div>
+          <p class="muted">A duração inclui a preparação e define quanto tempo cada reserva ocupa. Mudar a duração não altera exames já marcados. Para deixar de usar um exame, ponha «Inativo» em vez de o apagar.</p>
+          <div class="type-head"><span>Nome</span><span>Min</span><span>Tipo</span><span>Relatório</span><span>Estado</span><span>Ordem</span><span></span></div>
           ${types.map(row)}
           <h3 class="day-label">Novo tipo de exame</h3>
           ${row(null)}
@@ -194,18 +208,17 @@ export default async function adminRoutes(app, { db, config }) {
 
   const saveType = (req, reply, id) => {
     const b = req.body || {};
-    const parsed = ExamTypeSchema.safeParse(Object.fromEntries(['name', 'sap_code', 'minutes', 'price', 'is_electro', 'report_template', 'active', 'sort'].map((k) => [k, str(b[k])])));
-    const price = parsed.success ? parsePrice(parsed.data.price) : null;
-    if (!parsed.success || price === null) return reply.redirect('/admin/exames?err=dados_invalidos');
-    const v = { ...parsed.data, price_cents: price, is_electro: Number(parsed.data.is_electro), active: Number(parsed.data.active) };
+    const parsed = ExamTypeSchema.safeParse(Object.fromEntries(['name', 'minutes', 'is_electro', 'report_template', 'active', 'sort'].map((k) => [k, str(b[k])])));
+    if (!parsed.success) return reply.redirect('/admin/exames?err=dados_invalidos');
+    const v = { ...parsed.data, is_electro: Number(parsed.data.is_electro), active: Number(parsed.data.active) };
     if (id) {
-      db.prepare(`UPDATE exam_types SET name=@name, sap_code=@sap_code, minutes=@minutes, price_cents=@price_cents, is_electro=@is_electro,
+      db.prepare(`UPDATE exam_types SET name=@name, minutes=@minutes, is_electro=@is_electro,
         report_template=@report_template, active=@active, sort=@sort WHERE id=@id`).run({ ...v, id });
-      audit(db, req.user.id, 'alterar', 'tipo_exame', id, { price_cents: v.price_cents, minutes: v.minutes, active: v.active });
+      audit(db, req.user.id, 'alterar', 'tipo_exame', id, { minutes: v.minutes, active: v.active });
     } else {
       const code = `t${crypto.randomBytes(4).toString('hex')}`;
-      const info = db.prepare(`INSERT INTO exam_types (code, name, sap_code, minutes, price_cents, is_electro, report_template, active, sort)
-        VALUES (@code, @name, @sap_code, @minutes, @price_cents, @is_electro, @report_template, @active, @sort)`).run({ ...v, code });
+      const info = db.prepare(`INSERT INTO exam_types (code, name, minutes, is_electro, report_template, active, sort)
+        VALUES (@code, @name, @minutes, @is_electro, @report_template, @active, @sort)`).run({ ...v, code });
       audit(db, req.user.id, 'criar', 'tipo_exame', Number(info.lastInsertRowid));
     }
     return reply.redirect('/admin/exames?msg=guardado');
@@ -238,10 +251,10 @@ export default async function adminRoutes(app, { db, config }) {
           <form method="post" action="/admin/utilizadores" class="stack">
             <label>Nome<input name="display_name" required maxlength="80"></label>
             <label>Utilizador (para entrar)<input name="username" required maxlength="40" pattern="[A-Za-z0-9._-]+" autocomplete="off"></label>
-            <label>Perfil<select name="role"><option value="secretariado">Secretariado</option><option value="ortoptista">Ortoptista</option></select></label>
+            <input type="hidden" name="role" value="ortoptista">
             <button class="btn primary" type="submit">Criar</button>
           </form>
-          <p class="muted small">É gerada uma palavra-passe temporária, mostrada uma única vez. No primeiro acesso a pessoa define a sua.</p>
+          <p class="muted small">Contas só para ortoptistas: o secretariado usa o link de reservas. É gerada uma palavra-passe temporária, mostrada uma única vez; no primeiro acesso a pessoa define a sua.</p>
         </div></section>`,
     };
   };
@@ -254,7 +267,7 @@ export default async function adminRoutes(app, { db, config }) {
     const name = str(b.display_name).trim().slice(0, 80);
     const username = str(b.username).trim();
     const role = str(b.role);
-    if (!name || !/^[A-Za-z0-9._-]{2,40}$/.test(username) || !['secretariado', 'ortoptista'].includes(role)) {
+    if (!name || !/^[A-Za-z0-9._-]{2,40}$/.test(username) || role !== 'ortoptista') {
       return send(reply, req, usersPage(req, html`<div class="notice err" role="alert">Dados inválidos (utilizador: letras, números, . _ -).</div>`), 400);
     }
     if (db.prepare('SELECT 1 FROM users WHERE username = ?').get(username)) {

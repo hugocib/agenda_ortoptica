@@ -1,11 +1,11 @@
 import { z } from 'zod';
-import { html, euros, raw } from '../html.js';
+import { html, raw } from '../html.js';
 import { audit } from '../db.js';
-import { createRequest, examsWhere, getRequest, listExamTypes, transitionExam } from '../repo.js';
+import { createRequest, examsWhere, getRequest, listExamTypes, transitionExam, updatePatient } from '../repo.js';
 import { ORIGIN_LABEL } from '../domain/status.js';
 import { fmtDate, fmtDateTime, fmtUtcLocal, isDate, todayLocal } from '../time.js';
 import { emptyState, examLine, flash, originTag, pageHead, patientLabel, postButton, track, when } from '../ui.js';
-import { arr, idParam, send, str } from './util.js';
+import { arr, idParam, safeBack, send, str } from './util.js';
 
 const RequestSchema = z.object({
   patient_process: z.string().trim().min(1, 'Indique o n.º de processo do Siima.').max(40, 'Demasiado longo.'),
@@ -16,6 +16,7 @@ const RequestSchema = z.object({
   referrer: z.string().trim().max(160, 'Demasiado longo.'),
   priority: z.enum(['normal', 'urgente']),
   notes: z.string().trim().max(2000, 'Notas demasiado longas.'),
+  requisition: z.string().trim().max(40, 'Demasiado longo.'),
 }).superRefine((v, ctx) => {
   if (v.origin !== 'externo' && !v.project) ctx.addIssue({ code: 'custom', path: ['project'], message: 'Indique o projeto ou estudo.' });
 });
@@ -31,8 +32,8 @@ function newForm(req, types, values = {}, errors = {}) {
   const inv = (k) => (errors[k] ? html` aria-invalid="true"` : '');
   return {
     title: 'Novo pedido',
-    active: req.user.role === 'secretariado' ? 'novo' : 'pedidos',
-    body: html`${pageHead('Novo pedido', { back: { href: '/pedidos', label: 'Pedidos' }, sub: 'Registe a requisição e escolha logo a hora. O doente fica identificado pelo n.º de processo do Siima.' })}
+    active: 'pedidos',
+    body: html`${pageHead('Novo pedido', { back: { href: '/pedidos', label: 'Pedidos' }, sub: 'Para exames fora do circuito do secretariado: faz o percurso completo, incluindo a marcação no Siima. O doente fica identificado pelo n.º de processo.' })}
       ${Object.keys(errors).length ? html`<div class="notice err" role="alert">Corrija os campos assinalados.</div>` : ''}
       <form method="post" action="/pedidos" class="sheet form-grid guarded" novalidate>
         <fieldset class="span2">
@@ -48,7 +49,7 @@ function newForm(req, types, values = {}, errors = {}) {
           ${err('exam_type_id')}
           <div class="picks">${types.map((t) => html`<label class="pick">
             <input type="checkbox" name="exam_type_id" value="${t.id}"${selected.has(String(t.id)) ? html` checked` : ''}>
-            <span class="pick-n">${t.name}<small>${t.minutes} min${t.price_cents ? ` · ${euros(t.price_cents)}` : ''}${t.is_electro ? ' · eletrofisiologia' : ''}</small></span></label>`)}</div>
+            <span class="pick-n">${t.name}<small>${t.minutes} min${t.is_electro ? ' · eletrofisiologia' : ''}</small></span></label>`)}</div>
         </fieldset>
         <fieldset>
           <legend>Origem *</legend>
@@ -57,6 +58,7 @@ function newForm(req, types, values = {}, errors = {}) {
         </fieldset>
         <fieldset>
           <legend>Requisição</legend>
+          <label>N.º de requisição (Siima) <span class="opt">opcional; pode pôr depois</span><input name="requisition" maxlength="40" value="${v.requisition || ''}" class="mono" autocomplete="off"${inv('requisition')}>${err('requisition')}</label>
           <label>Requisitante <span class="opt">médico ou entidade</span><input name="referrer" maxlength="160" value="${v.referrer || ''}"></label>
           <div class="seg" role="radiogroup" aria-label="Prioridade"><label><input type="radio" name="priority" value="normal"${v.priority !== 'urgente' ? html` checked` : ''}> Normal</label>
           <label class="urg"><input type="radio" name="priority" value="urgente"${v.priority === 'urgente' ? html` checked` : ''}> Urgente</label></div>
@@ -73,7 +75,7 @@ export default async function requestRoutes(app, { db }) {
     const q = str(req.query.q).trim().slice(0, 60);
     let rows;
     if (q) {
-      rows = examsWhere(db, '(r.patient_process LIKE ? OR r.patient_name LIKE ? OR r.project LIKE ?)', [`%${q}%`, `%${q}%`, `%${q}%`], 'e.created_at DESC', 200);
+      rows = examsWhere(db, '(r.patient_process LIKE ? OR r.patient_name LIKE ? OR r.project LIKE ? OR e.requisition LIKE ?)', [`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`], 'e.created_at DESC', 200);
     } else if (filtro === 'por_agendar') {
       rows = examsWhere(db, "e.status = 'por_agendar'", [], "r.priority = 'urgente' DESC, e.created_at", 200);
     } else {
@@ -87,19 +89,19 @@ export default async function requestRoutes(app, { db }) {
         ${flash(req.query, req)}
         <div class="toolbar">
           <nav class="tabs" aria-label="Filtro"><a href="/pedidos?f=por_agendar" class="${!q && filtro === 'por_agendar' ? 'active' : ''}"${!q && filtro === 'por_agendar' ? raw(' aria-current="page"') : ''}>Por agendar</a><a href="/pedidos?f=todos" class="${!q && filtro === 'todos' ? 'active' : ''}"${!q && filtro === 'todos' ? raw(' aria-current="page"') : ''}>Todos <span class="muted small">últimos 200</span></a></nav>
-          <form method="get" action="/pedidos" class="search" role="search"><input type="search" name="q" value="${q}" placeholder="Processo, nome ou projeto" aria-label="Pesquisar pedidos"><button class="btn" type="submit">Pesquisar</button></form>
+          <form method="get" action="/pedidos" class="search" role="search"><input type="search" name="q" value="${q}" placeholder="Requisição, processo, nome ou projeto" aria-label="Pesquisar exames"><button class="btn" type="submit">Pesquisar</button></form>
         </div>
         ${q ? html`<p class="sec-note">${rows.length} ${rows.length === 1 ? 'resultado' : 'resultados'} para «${q}» · <a href="/pedidos">limpar pesquisa</a></p>` : ''}
         ${rows.length ? html`<table class="table rt">
-          <thead><tr><th>Exame e doente</th><th>Percurso</th><th>Data</th><th>Pedido</th><th></th></tr></thead>
+          <thead><tr><th>Exame e doente</th><th>Percurso</th><th>Data</th><th>Origem do pedido</th><th></th></tr></thead>
           <tbody>${rows.map((e) => html`<tr class="s-${e.status}">
             <td class="main-cell"><a class="ex-title" href="/exames/${e.id}">${e.type_name}</a>${e.priority === 'urgente' && e.status === 'por_agendar' ? html` <span class="urgent">Urgente</span>` : ''}
               <div class="ex-meta">${patientLabel(e)}${originTag(e.origin, e.project)}</div></td>
             <td>${track(e, { today })}</td>
             <td><span class="when">${e.starts_at ? when(e) : ''}</span></td>
-            <td><a href="/pedidos/${e.request_id}" class="mono">#${e.request_id}</a> <span class="muted small">${fmtDate(e.created_at)}</span></td>
+            <td>${e.source === 'secretariado' ? html`<span class="small">Secretariado${e.booked_by_name ? ` · ${e.booked_by_name}` : ''}</span>` : html`<a href="/pedidos/${e.request_id}" class="mono">#${e.request_id}</a>`} <span class="muted small">${fmtDate(e.created_at)}</span></td>
             <td class="right act">${e.status === 'por_agendar' ? html`<a class="btn primary" href="/exames/${e.id}/agendar">Agendar</a>` : ''}</td></tr>`)}</tbody></table>`
-          : q ? emptyState(`Nenhum pedido com «${q}».`, html`Procure pelo n.º de processo, parte do nome ou do projeto.`)
+          : q ? emptyState(`Nenhum exame com «${q}».`, html`Procure pelo n.º de requisição, de processo, parte do nome ou do projeto.`)
             : filtro === 'por_agendar' ? html`<p class="empty clear">Nada por agendar.</p>` : emptyState('Ainda não há pedidos.')}`,
     });
   });
@@ -108,7 +110,7 @@ export default async function requestRoutes(app, { db }) {
 
   app.post('/pedidos', async (req, reply) => {
     const body = req.body || {};
-    const values = Object.fromEntries(['patient_process', 'patient_name', 'birth_date', 'origin', 'project', 'referrer', 'priority', 'notes'].map((k) => [k, str(body[k])]));
+    const values = Object.fromEntries(['patient_process', 'patient_name', 'birth_date', 'origin', 'project', 'referrer', 'priority', 'notes', 'requisition'].map((k) => [k, str(body[k])]));
     values.exam_type_id = arr(body.exam_type_id);
     const parsed = RequestSchema.safeParse(values);
     const errors = {};
@@ -118,10 +120,10 @@ export default async function requestRoutes(app, { db }) {
     if (!typeIds.length) errors.exam_type_id = 'Escolha pelo menos um exame.';
     if (Object.keys(errors).length) return send(reply, req, newForm(req, listExamTypes(db), values, errors), 400);
 
-    const data = { ...parsed.data, birth_date: parsed.data.birth_date || null };
-    const requestId = createRequest(db, req.user, data, typeIds);
+    const { requisition, ...data } = { ...parsed.data, birth_date: parsed.data.birth_date || null };
+    const requestId = createRequest(db, req.user, data, typeIds, requisition);
     const exams = db.prepare('SELECT id FROM exams WHERE request_id = ?').pluck().all(requestId);
-    // Um só exame: segue logo para a escolha da hora (menos um clique para o secretariado).
+    // Um só exame: segue logo para a escolha da hora.
     if (exams.length === 1) return reply.redirect(`/exames/${exams[0]}/agendar?msg=criado`);
     return reply.redirect(`/pedidos/${requestId}?msg=criado`);
   });
@@ -154,7 +156,7 @@ export default async function requestRoutes(app, { db }) {
             <div><dt>Origem</dt><dd>${ORIGIN_LABEL[r.origin]}${r.project ? ` — ${r.project}` : ''}</dd></div>
             ${r.referrer ? html`<div><dt>Requisitante</dt><dd>${r.referrer}</dd></div>` : ''}
             <div><dt>Prioridade</dt><dd>${r.priority === 'urgente' ? 'Urgente' : 'Normal'}</dd></div>
-            <div><dt>Criado</dt><dd>${fmtUtcLocal(r.created_at)} · ${r.created_by_name}</dd></div>
+            <div><dt>Criado</dt><dd>${fmtUtcLocal(r.created_at)} · ${r.created_by_name || r.booked_by_name || '—'}</dd></div>
           </dl>
           ${r.notes ? html`<p class="notes">${r.notes}</p>` : ''}
           ${exams.some((e) => ['por_agendar', 'agendado'].includes(e.status))
@@ -163,10 +165,30 @@ export default async function requestRoutes(app, { db }) {
     });
   });
 
+  // Identificação do doente (sobretudo para reservas do secretariado, que chegam sem ela).
+  const PatientSchema = z.object({
+    patient_process: z.string().trim().max(40),
+    patient_name: z.string().trim().max(120),
+    birth_date: z.string().trim().refine((v) => v === '' || (isDate(v) && v >= '1900-01-01' && v <= todayLocal())),
+    origin: z.enum(['externo', 'projeto', 'ensaio']),
+    project: z.string().trim().max(120),
+  });
+  app.post('/pedidos/:id/doente', async (req, reply) => {
+    const id = idParam(req);
+    const r = id && getRequest(db, id);
+    if (!r) return reply.callNotFound();
+    const back = safeBack(req.body?.back, `/pedidos/${id}`);
+    const parsed = PatientSchema.safeParse(Object.fromEntries(['patient_process', 'patient_name', 'birth_date', 'origin', 'project'].map((k) => [k, str(req.body?.[k])])));
+    // Um pedido direto tem sempre de manter o n.º de processo.
+    if (!parsed.success || (r.source === 'direto' && !parsed.data.patient_process)) return reply.redirect(`${back.split('?')[0]}?err=dados_invalidos`);
+    updatePatient(db, req.user, id, { ...parsed.data, birth_date: parsed.data.birth_date || null });
+    return reply.redirect(`${back.split('?')[0]}?msg=doente`);
+  });
+
   app.post('/pedidos/:id/cancelar', async (req, reply) => {
     const id = idParam(req);
     if (!id || !getRequest(db, id)) return reply.callNotFound();
-    const pending = db.prepare("SELECT id FROM exams WHERE request_id = ? AND status IN ('por_agendar','agendado')").pluck().all(id);
+    const pending = db.prepare("SELECT id FROM exams WHERE request_id = ? AND status IN ('por_agendar','pendente','agendado')").pluck().all(id);
     for (const examId of pending) transitionExam(db, req.user, examId, 'cancelar');
     audit(db, req.user.id, 'cancelar', 'pedido', id, { exames: pending.length });
     return reply.redirect(`/pedidos/${id}?msg=cancelado`);

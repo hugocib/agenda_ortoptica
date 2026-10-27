@@ -15,6 +15,8 @@ import { scheduleBackups } from './backup.js';
 import { getSetting } from './db.js';
 import { MODES } from './themes.js';
 import lookRoutes from './routes/look.js';
+import bookingRoutes from './routes/booking.js';
+import pushRoutes from './routes/push.js';
 import authRoutes from './routes/auth.js';
 import todayRoutes from './routes/today.js';
 import requestRoutes from './routes/requests.js';
@@ -28,7 +30,7 @@ import miscRoutes from './routes/misc.js';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(here, '..', 'public');
 
-const PUBLIC_PATHS = [/^\/temas\.css$/, /^\/aparencia\/modo$/, /^\/login$/, /^\/static\//, /^\/manifest\.webmanifest$/, /^\/sw\.js$/, /^\/healthz$/, /^\/ics\//, /^\/offline$/];
+const PUBLIC_PATHS = [/^\/r\//, /^\/temas\.css$/, /^\/aparencia\/modo$/, /^\/login$/, /^\/static\//, /^\/manifest\.webmanifest$/, /^\/sw\.js$/, /^\/healthz$/, /^\/ics\//, /^\/offline$/];
 
 export async function buildApp({ db, config = defaultConfig, logger = true } = {}) {
   const app = Fastify({
@@ -37,7 +39,7 @@ export async function buildApp({ db, config = defaultConfig, logger = true } = {
       // Nunca registar cookies nem corpos de pedidos (dados de saúde).
       redact: ['req.headers.cookie', 'req.headers.authorization'],
       serializers: {
-        req: (r) => ({ method: r.method, url: r.url.replace(/^\/ics\/[^/]+/, '/ics/***') }),
+        req: (r) => ({ method: r.method, url: r.url.replace(/^\/(ics|r)\/[^/?]+/, '/$1/***') }),
       },
     },
     trustProxy: config.trustProxy,
@@ -88,6 +90,13 @@ export async function buildApp({ db, config = defaultConfig, logger = true } = {
       if (req.method === 'GET' || req.method === 'HEAD') return reply.redirect(`/login?next=${encodeURIComponent(req.url)}`);
       return reply.code(401).type('text/plain; charset=utf-8').send('Sessão expirada. Entre de novo.');
     }
+    // O secretariado deixou de ter conta: usa o link de reservas.
+    if (req.user.role !== 'ortoptista' && url !== '/logout') {
+      return reply.code(403).type('text/html; charset=utf-8').send(layout(req, {
+        title: 'Sem acesso', bare: true,
+        body: html`<div class="gate"><h1>O secretariado usa agora o link de reservas</h1><p class="lede">Peça o link ao ortoptista. Não precisa de conta nem de palavra-passe.</p><form method="post" action="/logout"><button class="btn" type="submit">Sair</button></form></div>`,
+      }));
+    }
     if (req.user.mustChangePassword && !['/conta', '/logout'].includes(url)) {
       return reply.redirect('/conta');
     }
@@ -114,7 +123,7 @@ export async function buildApp({ db, config = defaultConfig, logger = true } = {
     }));
   });
 
-  for (const r of [lookRoutes, authRoutes, todayRoutes, requestRoutes, examRoutes, reportRoutes, agendaRoutes, statsRoutes, adminRoutes, miscRoutes]) {
+  for (const r of [lookRoutes, bookingRoutes, pushRoutes, authRoutes, todayRoutes, requestRoutes, examRoutes, reportRoutes, agendaRoutes, statsRoutes, adminRoutes, miscRoutes]) {
     await app.register(r, deps);
   }
   return app;

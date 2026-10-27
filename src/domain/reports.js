@@ -312,7 +312,8 @@ export function renderReport(ctx) {
   <h1 class="r-title">${tpl.title}</h1>
   <dl class="r-patient">
     ${request.patient_name ? html`<div><dt>Nome</dt><dd>${request.patient_name}</dd></div>` : ''}
-    <div><dt>N.º processo</dt><dd>${request.patient_process}</dd></div>
+    ${request.patient_process ? html`<div><dt>N.º processo</dt><dd>${request.patient_process}</dd></div>` : ''}
+    ${exam.requisition ? html`<div><dt>N.º requisição</dt><dd>${exam.requisition}</dd></div>` : ''}
     ${request.birth_date ? html`<div><dt>Data de nascimento</dt><dd>${fmtDate(request.birth_date)}${age !== null ? ` (${age} anos)` : ''}</dd></div>` : ''}
     <div><dt>Data do exame</dt><dd>${fmtDateTime(exam.starts_at)}</dd></div>
     <div><dt>Exame</dt><dd>${examType.name}</dd></div>

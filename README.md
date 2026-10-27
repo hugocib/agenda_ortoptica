@@ -2,10 +2,11 @@
 
 App web (PWA) para gerir os exames de ortóptica e função visual no CIBIT-ICNAS. Corre em Docker num servidor e abre-se no browser (computador ou telemóvel), ou instala-se como app.
 
-- **Secretariado:** cria pedidos, escolhe uma vaga livre (bloqueia o horário) e confirma quando marcou no Siima.
-- **Ortoptista:** vê o dia, marca exames como realizados ou falta, preenche o relatório a partir dos valores do exame, valida e imprime, e confirma o registo no Siima.
-- **Nada fica esquecido:** o ecrã «Hoje» mostra sempre o que está por marcar, por fechar, por relatar e por registar no Siima.
-- **Estatística:** exames por tipo, receita estimada, valor do serviço a projetos, ocupação, faltas e exportação para CSV (Excel).
+- **Secretariado:** usa um link de reservas, sem conta nem dados de doentes. Escolhe o tipo de exame, vê as vagas livres (manhã e tarde) e reserva; o exame ocupa logo a duração certa. Indica o n.º de requisição do Siima e quem reservou. Pode pedir para mudar a hora ou cancelar.
+- **Ortoptista:** confirma ou recusa reservas e pedidos de alteração, vê o dia, marca exames como realizados ou falta, preenche o relatório a partir dos valores do exame, valida e imprime, e assinala quando o exame ficou executado no Siima.
+- **Exames fora do circuito:** o ortoptista cria o pedido (com o doente identificado) e faz o percurso completo, incluindo a marcação no Siima.
+- **Nada fica esquecido:** o ecrã «Hoje» mostra sempre o que está por confirmar, por fechar, por relatar e por executar no Siima, com contador no menu e notificação no telemóvel.
+- **Estatística de execução:** exames realizados, ocupação da agenda, faltas, tempos de espera, até ao relatório e até ao Siima, por tipo, origem e circuito, com exportação para CSV (Excel). Sem preços nem faturação: isso é com o secretariado.
 
 > O Siima continua a ser o registo oficial. Esta app é a agenda de trabalho e a lista de pendentes que garante que tudo chega ao Siima.
 
@@ -44,28 +45,38 @@ Por agora a app corre no homelab (VM Docker), **só com dados fictícios**. Ante
    ```
    docker compose exec app node src/cli.js criar-utilizador hugo "Hugo" ortoptista
    ```
-   Os outros utilizadores (secretariado) criam-se na própria app, em *Administração → Utilizadores*.
+   O secretariado não precisa de conta: usa o link de reservas (secção 4).
 
 ## 3. Acesso
 
 Abra `http://IP-do-servidor:3000` (ou a porta definida em `APP_PORT`), como as outras apps da rede. Se a puser atrás do Nginx Proxy Manager, ponha `TRUST_PROXY=true` no `.env`.
 
-Sem HTTPS, a app funciona toda, mas o browser não a deixa instalar como app e os botões de copiar processo/código SAP não fazem nada (o texto continua visível).
+Com HTTPS (Nginx Proxy Manager com certificado), a app instala-se como app, os botões de copiar funcionam e há **notificações push**. Sem HTTPS, funciona tudo o resto; o texto a copiar continua visível.
+
+**Notificações:** em *A minha conta → Notificações*, toque em «Ativar neste dispositivo» (em cada telemóvel ou computador onde as quiser). Chegam quando o secretariado faz uma reserva, muda a hora de uma reserva por confirmar, a anula, ou pede uma alteração ou um cancelamento. Só dizem o exame, a hora e quem reservou. No iPhone, primeiro instale a app no ecrã principal (Partilhar → Adicionar ao ecrã principal) e ative a partir daí.
 
 ## 4. Primeiros passos na app
 
-1. **Administração → Geral:** confirme o horário (por omissão terça e quinta, 9h–12h30), a grelha de 15 min, o máximo de 2 exames de eletrofisiologia por dia, e o cabeçalho e a identificação nos relatórios.
-2. **Administração → Tipos de exame:** confirme os preços (vêm do plano de negócios), as durações e os códigos SAP.
-3. **Administração → Normativos:** introduza só os limites que o laboratório validou. Sem normativo, o valor aparece sem classificação.
-4. **Administração → Utilizadores:** crie as contas do secretariado e entregue a palavra-passe temporária pessoalmente.
-5. **Administração → Calendário (ICS):** pode subscrever o endereço no Outlook para ver os exames no seu calendário. O calendário não mostra dados de doentes.
+1. **Administração → Geral → Horário:** uma linha por período. Para manhã e tarde, duas linhas no mesmo dia (p. ex. 09:00–13:00 e 14:00–17:00); o intervalo entre elas é o almoço e nunca tem vagas. Confirme também a grelha (15 min), o máximo de exames de eletrofisiologia por dia e quantas semanas de vagas se mostram.
+2. **Administração → Geral → Link de reservas:** copie o link e envie-o ao secretariado. Ponha os nomes de quem reserva (um por linha) para aparecerem numa lista. Se o link for parar a quem não deve, «Gerar link novo» desativa o anterior.
+3. **Administração → Tipos de exame:** confirme as durações (com preparação). É a duração que cada reserva ocupa.
+4. **Administração → Normativos:** introduza só os limites que o laboratório validou. Sem normativo, o valor aparece sem classificação.
+5. **A minha conta → Aspeto:** escolha um dos 12 temas (cor, letra e forma) e o modo claro/escuro de cada dispositivo.
+6. **Administração → Calendário (ICS):** pode subscrever o endereço no Outlook para ver os exames no seu calendário (as reservas por confirmar aparecem como «[por confirmar]»). O calendário não mostra dados de doentes.
 
-### Fluxo de cada exame
+### Os dois circuitos
 ```
-Pedido ─► Agendado na app ─► Marcado no Siima (secretariado)
-       ─► Realizado / Faltou (ortoptista) ─► Relatório validado ─► Registado no Siima (ortoptista)
+Secretariado (link):  Reserva por confirmar ─► Confirmado (ortoptista, com n.º de requisição)
+                      ─► Realizado / Faltou ─► Relatório validado ─► Executado no Siima
+
+Fora do circuito:     Pedido (ortoptista) ─► Agendado ─► Marcado no Siima
+                      ─► Realizado / Faltou ─► Relatório validado ─► Executado no Siima
 ```
-Cada passo tem um botão. O que falta fazer aparece em «Hoje»/«Início», com contadores no menu.
+- Uma reserva **por confirmar já ocupa a vaga**. O ortoptista confirma (o n.º de requisição tem de estar preenchido nesse momento) ou recusa com um motivo, que o secretariado vê no link.
+- Enquanto está por confirmar, o secretariado pode mudar a hora ou anular diretamente. Depois de confirmada, só pode **pedir** a alteração ou o cancelamento: a hora proposta fica reservada até o ortoptista aceitar ou recusar, e até lá mantém-se a hora atual.
+- As reservas chegam sem identificação do doente. Para validar o relatório, o ortoptista identifica o doente (n.º de processo ou nome) na página do exame; o relatório mostra também o n.º de requisição.
+
+Cada passo tem um botão. O que falta fazer aparece em «Hoje», com contador no menu.
 
 ## 5. Cópias de segurança e restauro
 
@@ -105,17 +116,17 @@ Desenvolvimento sem Docker: `npm install`, `npm test`, `npm run dev` (abre em `h
 
 | Erro típico | O que esta app faz |
 |---|---|
-| App aberta a toda a rede, sem login | Login obrigatório; perfis *ortoptista* e *secretariado*; o secretariado não vê relatórios, estatística nem administração |
+| App aberta a toda a rede, sem login | Login obrigatório para o ortoptista; o secretariado só tem o link de reservas, que não mostra dados de doentes, pode ser gerado de novo a qualquer momento e não dá acesso a mais nada |
 | Palavras-passe guardadas em claro ou definidas no código | scrypt com sal; palavras-passe temporárias geradas e mostradas uma vez; mudança obrigatória no 1.º acesso; limite de 5 tentativas em 15 min |
 | Sessões e CSRF esquecidos | Cookie `HttpOnly` + `SameSite=Strict` + `Secure`; todos os POST verificam a origem; sessão termina após 10 h sem uso |
 | XSS com dados de formulários | Todo o HTML passa por escape automático; Content-Security-Policy sem scripts nem estilos inline |
 | Validação só no browser | Todos os dados são validados no servidor (zod), com mensagens claras e sem perder o que foi escrito |
-| Duas pessoas marcam a mesma vaga | Verificação de sobreposição dentro de uma transação SQLite `IMMEDIATE`; a segunda marcação é recusada |
+| Duas pessoas marcam a mesma vaga | Verificação de sobreposição dentro de uma transação SQLite `IMMEDIATE`; a segunda marcação é recusada. Reservas por confirmar e horas propostas em pedidos de alteração também ocupam a vaga |
 | Duplo clique ou separador antigo fazem ações duplicadas | Mudanças de estado do tipo «só se ainda estiver em X»; botões desativados ao submeter; padrão POST → redirecionamento |
 | Estados impossíveis (ex.: registar no Siima algo não feito) | Máquina de estados explícita, mais restrições `CHECK` na base de dados; não se marca «realizado» um exame de um dia futuro |
 | Fusos horários e mudança de hora | Marcações em hora local de Lisboa; conversão para UTC só no ICS, testada no dia da mudança de hora |
 | Vírgula decimal rejeitada | Aceita `12,5` e `12.5` |
-| Mudar o preçário altera o histórico | Preço e duração ficam registados em cada exame no momento do pedido |
+| Mudar a duração de um tipo altera exames já marcados | A duração fica registada em cada exame no momento da reserva |
 | Relatório assinado muda depois | Ao validar, guarda-se uma cópia fixa; reabrir cria histórico |
 | Normativos inventados | A app não traz normativos: cada laboratório introduz os seus |
 | Service worker que mostra dados antigos ou os deixa no disco | Só ficheiros estáticos em cache; páginas com dados nunca ficam em cache (`no-store`); sem rede, aparece uma página a avisar |
@@ -123,24 +134,28 @@ Desenvolvimento sem Docker: `npm install`, `npm test`, `npm run dev` (abre em `h
 | SQLite em pasta sem permissões ou partilhada | Pasta local do servidor (uid 1000), verificada no arranque; nunca numa pasta de rede/SMB |
 | Sem cópias de segurança | Automáticas, consistentes (API de backup do SQLite) e com rotação |
 | Esquema da BD alterado à mão | Migrações numeradas, aplicadas em transação |
-| Logs com dados pessoais | Os registos não incluem corpos de pedidos, cookies nem o token do calendário |
+| Logs com dados pessoais | Os registos não incluem corpos de pedidos, cookies, nem os tokens do calendário e do link de reservas |
+| Notificações com dados de saúde | O texto das notificações push só tem o tipo de exame, a hora e quem reservou |
 | Exportação CSV abre mal ou executa fórmulas no Excel | UTF-8 com BOM e `;`; células começadas por `= + - @` são neutralizadas; sem nomes de doentes |
 | Contentor como root | Corre como utilizador `node` (uid 1000) |
-| Sem testes | `npm test`: vagas, estados, datas, relatórios, autenticação, CSRF, permissões e o fluxo completo |
+| Temas bonitos mas ilegíveis | Os 12 temas são gerados de poucas cores e verificados contra o contraste WCAG AA (texto, campos, barra do topo), em claro e escuro; há um teste que falha se algum não cumprir |
+| Sem testes | `npm test`: vagas, almoço, estados dos dois circuitos, reservas e pedidos de alteração, datas, relatórios, temas, notificações, autenticação, CSRF e os fluxos completos |
 
 ## 8a. Linguagem visual
 
-- **O percurso do exame.** Cada exame passa por cinco estações (agendado → marcado no Siima → realizado → relatório validado → registado no Siima). Aparece em todas as listas como cinco pontos com uma frase («Por marcar no Siima», «Falta relatório e registo no Siima») e na página do exame em grande, com o botão de cada passo na estação respetiva.
-- **A fita do dia.** O «Hoje» e a agenda mostram o dia como uma linha de tempo: exames, bloqueios (tracejado) e **tempo livre** entre eles. O secretariado vê logo onde cabe um exame.
-- **Cor com significado fixo.** Petróleo = ação; âmbar = algo em dívida (falta fazer, quase sempre o Siima); vermelho = atrasado, falta ou erro; tinta = feito; verde só para confirmar que algo ficou guardado. Nos relatórios, OD a vermelho e OE a azul (convenção clínica).
-- **Tipo de letra:** Atkinson Hyperlegible Next e Mono (Braille Institute, licença OFL, em `public/fonts`), desenhadas para leitores com baixa visão. Distinguem 0/O e 1/l/I, o que conta nos números de processo e nos códigos SAP. Ficheiros locais: funciona sem Internet.
-- **Sem caixas desnecessárias:** as secções assentam numa linha de tinta. Só os formulários e o relatório têm uma folha branca. No telemóvel, a navegação passa para baixo e as tabelas viram linhas de texto corrido.
-- **Modo escuro** automático, útil no laboratório de eletrofisiologia, onde se trabalha com pouca luz. O relatório impresso é sempre claro.
-- **Pormenores de trabalho:** os códigos que é preciso escrever no Siima copiam-se com um toque; depois de «Marcado/Registado no Siima» ou «Realizado», a mensagem tem «Desfazer»; os valores fora dos normativos ficam assinalados (↓/↑) enquanto se escreve; antes de enviar um relatório ou um pedido, a app confirma que o servidor responde e, se não responder, nada se perde do que foi escrito.
+- **O percurso do exame.** Cada exame passa por estações: quatro nas reservas do secretariado (confirmado → realizado → relatório validado → executado no Siima) e cinco fora do circuito (com a marcação no Siima). Aparece nas listas como uma fila de pontos com uma frase («Por confirmar», «Falta relatório e executar no Siima») e na página do exame em grande, com o botão de cada passo na estação respetiva.
+- **A fita do dia.** O «Hoje» e a agenda mostram o dia como uma linha de tempo dividida em manhã e tarde, com o almoço marcado: exames, reservas por confirmar (nó tracejado), horas propostas em pedidos de alteração, bloqueios e **tempo livre** entre eles.
+- **Temas.** 12 temas escolhíveis em *A minha conta → Aspeto*, cada um com paleta, tipos de letra e forma próprios (cantos, espessura das linhas, forma dos nós do percurso, barra do topo). São definidos em `src/themes.js` e verificados automaticamente contra o contraste AA. Tipos de letra locais (licença OFL, em `public/fonts`): funciona sem Internet.
+- **Cor com significado fixo em todos os temas.** Cor de ação; âmbar = algo em dívida (por confirmar, por fazer); vermelho = atrasado, falta, recusa ou erro; tinta = feito; verde só para confirmar que algo ficou guardado. O significado está sempre também no texto. Nos relatórios, OD a vermelho e OE a azul (convenção clínica).
+- **Sem caixas desnecessárias:** as secções assentam numa linha. Só os formulários, a caixa «Por confirmar» e o relatório têm folha própria. No telemóvel, a navegação passa para baixo e as tabelas viram linhas de texto corrido.
+- **Modo claro/escuro** automático ou escolhido em cada dispositivo (o escuro é útil no laboratório de eletrofisiologia). O relatório impresso é sempre claro.
+- **Pormenores de trabalho:** a requisição e o processo copiam-se com um toque; depois de «Executado no Siima» ou «Realizado», a mensagem tem «Desfazer»; os valores fora dos normativos ficam assinalados (↓/↑) enquanto se escreve; antes de enviar um relatório, um pedido ou uma reserva, a app confirma que o servidor responde e, se não responder, nada se perde do que foi escrito.
 
 ## 9. Limitações conhecidas
 
-- Não há integração automática com o Siima: a app lembra e regista que foi feito, mas a marcação e o registo continuam a ser feitos lá.
+- Não há integração automática com o Siima: a app lembra e regista que foi feito, mas a marcação e a execução continuam a ser feitas lá.
+- O link de reservas é partilhado (não identifica cada pessoa): quem reservou é o nome escolhido na lista. Se precisar de saber com certeza quem fez cada reserva, terá de haver contas individuais.
 - A assinatura é manual (imprimir) ou com o Cartão de Cidadão / Chave Móvel Digital no PDF guardado. A app não assina digitalmente.
 - Os normativos não variam com a idade. Para normativos por idade, é preciso acrescentá-los numa versão futura.
-- Não há notificações push nem e-mail. Os pendentes aparecem na app e no calendário ICS.
+- As notificações push precisam de HTTPS e de ser ativadas em cada dispositivo; não há notificações por e-mail.
+- **Atualização para a v1.2:** os códigos SAP e os preços dos tipos de exame são apagados da base de dados (o `atualizar.sh` faz uma cópia de segurança antes). As contas de secretariado que existissem deixam de entrar: passam a usar o link.
