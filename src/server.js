@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Fastify from 'fastify';
@@ -113,7 +114,20 @@ export async function buildApp({ db, config = defaultConfig, logger = true } = {
   return app;
 }
 
+// Com pastas montadas do servidor, o erro mais comum é a pasta não pertencer ao uid 1000.
+function assertWritable(dir, what) {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.accessSync(dir, fs.constants.W_OK);
+  } catch {
+    console.error(`Sem permissão de escrita na pasta ${what} (${dir}). No servidor: sudo chown -R 1000:1000 <DATA_DIR>`);
+    process.exit(1);
+  }
+}
+
 async function main() {
+  assertWritable(defaultConfig.dataDir, 'dos dados');
+  assertWritable(defaultConfig.backupDir, 'das cópias de segurança');
   const db = openDb(defaultConfig.dbFile);
   const app = await buildApp({ db });
   scheduleBackups(db, { dir: defaultConfig.backupDir, keep: defaultConfig.backupKeep, everyHours: defaultConfig.backupEveryHours, log: app.log });

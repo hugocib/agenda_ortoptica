@@ -1,6 +1,6 @@
 #!/bin/sh
 # Atualiza a app para a última versão do repositório e reconstrói os contentores.
-# Uso: ./atualizar.sh   (na pasta do projeto, no computador onde a app corre; no Windows: atualizar.cmd)
+# Uso: ./atualizar.sh   (na pasta do projeto, no servidor)
 # Antes de reconstruir faz uma cópia de segurança da base de dados. O .env e os dados não são tocados.
 set -e
 cd "$(dirname "$0")"

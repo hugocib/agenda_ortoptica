@@ -1,0 +1,20 @@
+# Ortóptica — agenda, registo e relatórios.
+# Arranque: docker compose up -d --build   ·   Atualizar: ./atualizar.sh
+# As definições de cada servidor (pasta dos dados, porta) ficam no .env, que não vai para o git.
+# HTTPS: fica a cargo do Tailscale (tailscale serve) ou de um reverse proxy; ver README, secção 3.
+services:
+  app:
+    build: .
+    image: ortoptica-agenda:1.1.1
+    container_name: ortoptica-agenda
+    restart: unless-stopped
+    init: true
+    env_file: .env
+    volumes:
+      # A app corre como utilizador node (uid 1000): as duas pastas têm de lhe pertencer.
+      - ${DATA_DIR:-./data}/db:/data            # base de dados SQLite
+      - ${DATA_DIR:-./data}/backups:/backups    # cópias de segurança automáticas
+    ports:
+      # Por omissão aberta a todas as interfaces. Para aceitar só pela Tailscale, use APP_BIND=IP-tailscale
+      # ou APP_BIND=127.0.0.1 se for servida por «tailscale serve» na mesma máquina.
+      - ${APP_BIND:-0.0.0.0}:${APP_PORT:-3000}:3000

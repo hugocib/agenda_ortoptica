@@ -1,6 +1,6 @@
 # Ortóptica — agenda, registo e relatórios
 
-App web (PWA) para gerir os exames de ortóptica e função visual no CIBIT-ICNAS. Corre em Docker num computador da rede e abre-se no browser de qualquer computador da mesma rede.
+App web (PWA) para gerir os exames de ortóptica e função visual no CIBIT-ICNAS. Corre em Docker num servidor e abre-se no browser (computador ou telemóvel), ou instala-se como app.
 
 - **Secretariado:** cria pedidos, escolhe uma vaga livre (bloqueia o horário) e confirma quando marcou no Siima.
 - **Ortoptista:** vê o dia, marca exames como realizados ou falta, preenche o relatório a partir dos valores do exame, valida e imprime, e confirma o registo no Siima.
@@ -11,48 +11,55 @@ App web (PWA) para gerir os exames de ortóptica e função visual no CIBIT-ICNA
 
 ---
 
-## 1. Antes de instalar: confirmar com a UC
+## 1. Fase atual: teste no homelab
 
-- **Proteção de dados:** a app guarda o n.º de processo e, opcionalmente, o nome, a data de nascimento e os resultados dos exames, que são dados de saúde. Peça ao Encarregado de Proteção de Dados da UC e à direção do ICNAS que aprovem o uso. Pontos a apresentar estão na secção 8.
-- **Informática:** é preciso instalar o Docker Desktop, abrir a porta 443 na firewall do Windows e instalar um certificado nos computadores das secretárias. Em computadores geridos pela UC, isto costuma precisar da equipa de informática.
-- **Qual computador:** a app só está disponível enquanto esse computador estiver ligado e acordado. O ideal é uma máquina sempre ligada (um servidor ou uma VM do ICNAS). Se for o seu PC de trabalho, desligue a suspensão automática.
+Por agora a app corre no homelab (VM Docker), acessível pela Tailscale, **só com dados fictícios**. Antes de entrar qualquer doente real:
 
-## 2. Instalação (Windows)
+- **Proteção de dados:** a app guarda o n.º de processo e, opcionalmente, o nome, a data de nascimento e os resultados dos exames, que são dados de saúde. O Encarregado de Proteção de Dados da UC e a direção do ICNAS têm de aprovar o uso e o sítio onde a app corre. Um servidor pessoal não serve para dados de doentes da UC. Os pontos a apresentar estão na secção 8.
+- **Onde vai correr:** numa máquina sempre ligada da UC/ICNAS (servidor ou VM), com HTTPS. A instalação é a mesma da secção 2; só muda a forma de pôr HTTPS à frente (secção 3).
+- **Antes de passar a dados reais:** apague a base de dados de teste (pasta `db/` dentro de `DATA_DIR`).
 
-1. Instale o [Docker Desktop](https://www.docker.com/products/docker-desktop/) com WSL 2. Em *Settings → General*, ative **Start Docker Desktop when you sign in**.
-2. Instale o [Git para Windows](https://git-scm.com/download/win) e clone o repositório para o computador, por exemplo para `C:\ortoptica-agenda` (ver secção 6). Assim as atualizações fazem-se com um duplo clique.
-3. Descubra o IP do computador: abra a *Linha de comandos* e escreva `ipconfig` («Endereço IPv4»). O IP deve ser fixo; peça à informática uma reserva DHCP ou um nome na rede.
-4. Copie `.env.example` para `.env` e edite-o:
+## 2. Instalação (servidor Linux com Docker)
+
+1. Clone o repositório para a pasta das stacks, por exemplo com o Dockge:
    ```
-   SITE_HOST=192.168.1.50          # o IP ou o nome do computador
-   BACKUP_HOST_DIR=./backups       # ou uma pasta do OneDrive da UC / pasta de rede
+   git clone https://github.com/hugocib/agenda_ortoptica /opt/stacks/ortoptica
+   cd /opt/stacks/ortoptica
    ```
-5. Abra a *Linha de comandos* nessa pasta e arranque:
+2. Crie o `.env` a partir do exemplo e ajuste `DATA_DIR`, a porta e `TRUST_PROXY`:
+   ```
+   cp .env.example .env
+   ```
+3. Crie as pastas dos dados. Têm de pertencer ao uid 1000, porque a app não corre como root:
+   ```
+   sudo mkdir -p /srv/data/appdata/ortoptica/db /srv/data/appdata/ortoptica/backups
+   sudo chown -R 1000:1000 /srv/data/appdata/ortoptica
+   ```
+   Se a pasta não tiver as permissões certas, a app para no arranque com uma mensagem a dizer qual pasta é.
+4. Arranque:
    ```
    docker compose up -d --build
    ```
-6. Crie o seu utilizador. É mostrada uma palavra-passe temporária, e no primeiro acesso a app pede uma nova.
+5. Crie o seu utilizador. É mostrada uma palavra-passe temporária, e no primeiro acesso a app pede uma nova.
    ```
    docker compose exec app node src/cli.js criar-utilizador hugo "Hugo" ortoptista
    ```
-   Os utilizadores do secretariado criam-se depois na própria app, em *Administração → Utilizadores*.
-7. Abra a firewall para a porta 443. Numa *Linha de comandos* como administrador:
-   ```
-   netsh advfirewall firewall add rule name="Ortoptica HTTPS" dir=in action=allow protocol=TCP localport=443
-   ```
+   Os outros utilizadores (secretariado) criam-se na própria app, em *Administração → Utilizadores*.
 
-## 3. HTTPS e certificado (uma vez por computador)
+## 3. Acesso e HTTPS (Tailscale)
 
-A app usa HTTPS, que é obrigatório para se poder instalar como app e para proteger a sessão. O certificado é emitido por uma autoridade local criada pelo Caddy, por isso cada computador que usa a app tem de confiar nela.
+A app funciona por `http://IP-do-servidor:3000`, mas sem HTTPS o browser **não a deixa instalar como app**, não ativa a página «sem ligação» e não permite os botões de copiar processo/código SAP. Com Tailscale, a forma mais simples de ter HTTPS com certificado válido é o `tailscale serve`, na máquina onde corre a app:
 
-1. Exporte o certificado da autoridade:
+1. Na consola da Tailscale, em *DNS*, ative **MagicDNS** e **HTTPS Certificates** (uma vez por tailnet).
+2. No servidor:
    ```
-   docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./ortoptica-ca.crt
+   sudo tailscale serve --bg 3000
    ```
-2. Em cada computador (o seu e os do secretariado): duplo clique em `ortoptica-ca.crt` → **Instalar certificado** → *Máquina local* → *Colocar todos os certificados no seguinte arquivo* → **Autoridades de Certificação de Raiz Fidedignas**. Em PCs geridos, a informática pode distribuí-lo por política.
-3. Abra `https://192.168.1.50` (o seu `SITE_HOST`) no Edge ou no Chrome. Para instalar como app, use o ícone **Instalar** na barra de endereço.
+   A app fica em `https://<nome-da-máquina>.<tailnet>.ts.net`, só acessível a quem está na sua tailnet. `tailscale serve status` mostra o endereço; `sudo tailscale serve reset` desliga.
+3. No `.env`, deixe `TRUST_PROXY=true`. Pode também pôr `APP_BIND=127.0.0.1`, para a porta 3000 deixar de estar aberta à rede local e a app só ser acessível pelo endereço HTTPS. Depois corra `docker compose up -d`.
+4. Abra o endereço no Chrome ou no Edge e use o ícone **Instalar** da barra de endereço. No iPhone, use Partilhar → *Adicionar ao ecrã principal*.
 
-Sem o certificado instalado, a app funciona na mesma, mas o browser mostra um aviso e não permite instalá-la.
+Se preferir o seu domínio, pode pôr o Nginx Proxy Manager à frente (proxy para `http://IP:3000`, com certificado). Nesse caso, mantenha `TRUST_PROXY=true`. Se ao guardar algo aparecer «Pedido recusado (origem inválida)», é porque o proxy não está a passar o cabeçalho `Host` original.
 
 ## 4. Primeiros passos na app
 
@@ -71,9 +78,8 @@ Cada passo tem um botão. O que falta fazer aparece em «Hoje»/«Início», com
 
 ## 5. Cópias de segurança e restauro
 
-- É feita uma cópia automática a cada 24 h e guardam-se as últimas 30, na pasta `BACKUP_HOST_DIR`. Há também um botão em *Administração → Geral* para fazer uma cópia na hora.
-- **Recomendado:** aponte `BACKUP_HOST_DIR` para uma pasta sincronizada (OneDrive da UC) ou de rede. Se o disco do computador avariar, as cópias que estão no mesmo disco perdem-se com ele.
-- Confirme de vez em quando que aparecem ficheiros novos nessa pasta.
+- É feita uma cópia automática a cada 24 h e guardam-se as últimas 30, em `DATA_DIR/backups`. Há também um botão em *Administração → Geral* para fazer uma cópia na hora, e o `atualizar.sh` faz uma antes de cada atualização.
+- As cópias usam a API de backup do SQLite, por isso são consistentes mesmo com a app a correr. Ficam na mesma pasta que o resto dos dados: confirme que `DATA_DIR` está incluída no backup do servidor (restic, vzdump), porque uma cópia no mesmo disco não protege contra uma avaria do disco. Confirme de vez em quando que aparecem ficheiros novos.
 
 **Restaurar uma cópia** (substitui os dados atuais):
 ```
@@ -84,13 +90,11 @@ docker compose start app
 
 ## 6. Atualizar a app
 
-As alterações chegam pelo repositório (`https://github.com/hugocib/agenda_ortoptica`). Na primeira instalação, em vez de copiar a pasta, clone-a:
+As alterações chegam pelo repositório (`https://github.com/hugocib/agenda_ortoptica`). No servidor, na pasta do projeto:
 ```
-git clone https://github.com/hugocib/agenda_ortoptica C:\ortoptica-agenda
+./atualizar.sh
 ```
-Depois, para atualizar, na pasta do projeto faça duplo clique em **`atualizar.cmd`** (Windows) ou corra `./atualizar.sh` (Linux/macOS/Git Bash).
-
-O script faz `git pull`, mostra o que mudou, **faz uma cópia de segurança** da base de dados e reconstrói os contentores. O `.env`, os dados e os certificados não são tocados. As alterações à base de dados aplicam-se sozinhas no arranque (migrações numeradas em `src/migrations`) e o browser recebe a versão nova da app sozinho, sem interromper quem está a escrever um relatório: a página só muda na navegação seguinte.
+O script faz `git pull`, mostra o que mudou, **faz uma cópia de segurança** da base de dados e reconstrói o contentor. O `.env` e os dados não são tocados. As alterações à base de dados aplicam-se sozinhas no arranque (migrações numeradas em `src/migrations`). O browser recebe a versão nova da app sozinho, sem interromper quem está a escrever um relatório: a página só muda na navegação seguinte.
 
 Se alguma coisa falhar a meio, o script para e a versão anterior continua a correr.
 
@@ -124,13 +128,13 @@ Desenvolvimento sem Docker: `npm install`, `npm test`, `npm run dev` (abre em `h
 | Relatório assinado muda depois | Ao validar, guarda-se uma cópia fixa; reabrir cria histórico |
 | Normativos inventados | A app não traz normativos: cada laboratório introduz os seus |
 | Service worker que mostra dados antigos ou os deixa no disco | Só ficheiros estáticos em cache; páginas com dados nunca ficam em cache (`no-store`); sem rede, aparece uma página a avisar |
-| PWA que não instala na rede local | HTTPS com autoridade local do Caddy e `default_sni` para acesso por IP |
-| SQLite corrompido em pasta partilhada do Windows | Base de dados num volume Docker; só as cópias ficam numa pasta do Windows |
+| PWA que não instala na rede local | HTTPS com certificado válido via `tailscale serve` (ou reverse proxy); sem HTTPS a app funciona, mas sem instalação |
+| SQLite em pasta sem permissões ou partilhada | Pasta local do servidor (uid 1000), verificada no arranque; nunca numa pasta de rede/SMB |
 | Sem cópias de segurança | Automáticas, consistentes (API de backup do SQLite) e com rotação |
 | Esquema da BD alterado à mão | Migrações numeradas, aplicadas em transação |
 | Logs com dados pessoais | Os registos não incluem corpos de pedidos, cookies nem o token do calendário |
 | Exportação CSV abre mal ou executa fórmulas no Excel | UTF-8 com BOM e `;`; células começadas por `= + - @` são neutralizadas; sem nomes de doentes |
-| Contentor como root e porta da app exposta | Corre como utilizador `node`; só o Caddy publica portas |
+| Contentor como root e porta da app exposta | Corre como utilizador `node`; `APP_BIND` limita a porta à própria máquina quando servida pela Tailscale |
 | Sem testes | `npm test`: vagas, estados, datas, relatórios, autenticação, CSRF, permissões e o fluxo completo |
 
 ## 8a. Linguagem visual
