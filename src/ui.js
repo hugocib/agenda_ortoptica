@@ -8,13 +8,20 @@ import { REASONS } from './domain/slots.js';
 import { examTrack, ORIGIN_LABEL, STATIONS, STATUS_LABEL } from './domain/status.js';
 import { fmtDuration } from './domain/tape.js';
 import { fmtDateTime, fmtDate, todayLocal } from './time.js';
+import { FONTS, themeById, themesCss } from './themes.js';
 
 // Versão dos ficheiros estáticos = hash do conteúdo. Qualquer alteração ao CSS/JS/SW/ícones muda a
 // versão, o browser descarrega os ficheiros novos e o service worker limpa a cache antiga.
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
+export const THEMES_CSS = themesCss();
 export const ASSET_VERSION = crypto.createHash('sha256')
-  .update(['app.css', 'app.js', 'sw.js', 'icons.svg'].map((f) => fs.readFileSync(path.join(PUBLIC_DIR, f), 'utf8')).join('\n'))
+  .update(['app.css', 'app.js', 'sw.js', 'icons.svg'].map((f) => fs.readFileSync(path.join(PUBLIC_DIR, f), 'utf8')).join('\n') + THEMES_CSS)
   .digest('hex').slice(0, 10);
+
+function fontFile(family) {
+  const f = FONTS[family];
+  return (Array.isArray(f) ? f[0] : f).file;
+}
 
 // Mensagens por código: o URL nunca transporta texto livre (evita injeção e fugas de dados).
 export const MESSAGES = {
@@ -37,6 +44,7 @@ export const MESSAGES = {
   bloqueio_apagado: 'Bloqueio removido.',
   utilizador: 'Utilizador criado.',
   backup: 'Cópia de segurança criada.',
+  tema: 'Tema aplicado a toda a app.',
   ics: 'Novo endereço do calendário criado. O anterior deixou de funcionar.',
 };
 
@@ -109,19 +117,24 @@ export const MARK = raw(`<svg class="mark" viewBox="0 0 32 32" aria-hidden="true
 export function layout(req, { title, body, active = '', autorefresh = false, bare = false, wide = false }) {
   const user = req.user;
   const counts = req.counts || {};
+  const look = req.look || { theme: '', mode: 'auto' };
+  const theme = themeById(look.theme);
+  const metaLight = html`<meta name="theme-color" content="${theme.lightVars['--top-bg']}"${look.mode === 'auto' ? raw(' media="(prefers-color-scheme: light)"') : ''}>`;
+  const metaDark = html`<meta name="theme-color" content="${theme.darkVars['--top-bg']}"${look.mode === 'auto' ? raw(' media="(prefers-color-scheme: dark)"') : ''}>`;
+  const metas = look.mode === 'claro' ? metaLight : look.mode === 'escuro' ? metaDark : html`${metaLight}\n${metaDark}`;
   return `<!doctype html>
-<html lang="pt-PT">
+<html lang="pt-PT" data-theme="${theme.id}" data-mode="${look.mode}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#151D21" media="(prefers-color-scheme: dark)">
-<meta name="color-scheme" content="light dark">
+${metas}
+<meta name="color-scheme" content="${look.mode === 'claro' ? 'light' : look.mode === 'escuro' ? 'dark' : 'light dark'}">
 <title>${html`${title}`} · Ortóptica</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/static/icon-192.png">
-<link rel="preload" href="/static/fonts/hyperlegible-next.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/fonts/${fontFile(theme.fonts.body)}" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/temas.css?v=${ASSET_VERSION}">
 <link rel="stylesheet" href="/static/app.css?v=${ASSET_VERSION}">
 <script src="/static/app.js?v=${ASSET_VERSION}" defer></script>
 </head>

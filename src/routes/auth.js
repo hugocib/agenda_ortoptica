@@ -1,4 +1,5 @@
-import { html } from '../html.js';
+import { html, raw } from '../html.js';
+import { themeById } from '../themes.js';
 import { audit } from '../db.js';
 import {
   checkLogin, COOKIE, createSession, destroySession, destroyUserSessions, hashPassword,
@@ -71,6 +72,14 @@ export default async function authRoutes(app, { db, config, limiter }) {
           <label>Nova palavra-passe <span class="opt">mínimo 10 caracteres; uma frase é mais fácil de lembrar</span><input type="password" name="password" autocomplete="new-password" minlength="10" required></label>
           <label>Repetir nova palavra-passe<input type="password" name="password2" autocomplete="new-password" minlength="10" required></label>
           <div><button class="btn primary" type="submit">Alterar palavra-passe</button></div>
+        </form>
+      </section>
+      <section class="sec"><div class="sec-h"><h2>Aspeto</h2><span class="aside"><a href="/aparencia">Ver e escolher temas</a></span></div>
+        <p class="sec-note">Tema atual: <b>${themeById(req.look.theme).name}</b>. O modo claro/escuro fica guardado neste dispositivo.</p>
+        <form method="post" action="/aparencia/modo" class="toolbar">
+          <input type="hidden" name="back" value="/conta">
+          <span class="seg" role="radiogroup" aria-label="Modo neste dispositivo">${['auto', 'claro', 'escuro'].map((m) => html`<label><input type="radio" name="modo" value="${m}"${req.look.mode === m ? raw(' checked') : ''}> ${{ auto: 'Automático', claro: 'Claro', escuro: 'Escuro' }[m]}</label>`)}</span>
+          <button class="btn" type="submit">Aplicar</button>
         </form>
       </section>
       <section class="sec quiet" id="instalar" hidden><div class="sec-h"><h2>Instalar como app</h2></div>

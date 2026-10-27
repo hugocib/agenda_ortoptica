@@ -70,6 +70,7 @@ export const DEFAULT_SETTINGS = {
   report_signer_id: 'Cédula profissional n.º ______',
   report_medical_line: true,
   norms: {},
+  theme: 'laboratorio',
 };
 
 export function seed(db) {

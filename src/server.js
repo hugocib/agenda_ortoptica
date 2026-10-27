@@ -12,6 +12,9 @@ import { todayLocal } from './time.js';
 import { layout } from './ui.js';
 import { html } from './html.js';
 import { scheduleBackups } from './backup.js';
+import { getSetting } from './db.js';
+import { MODES } from './themes.js';
+import lookRoutes from './routes/look.js';
 import authRoutes from './routes/auth.js';
 import todayRoutes from './routes/today.js';
 import requestRoutes from './routes/requests.js';
@@ -25,7 +28,7 @@ import miscRoutes from './routes/misc.js';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(here, '..', 'public');
 
-const PUBLIC_PATHS = [/^\/login$/, /^\/static\//, /^\/manifest\.webmanifest$/, /^\/sw\.js$/, /^\/healthz$/, /^\/ics\//, /^\/offline$/];
+const PUBLIC_PATHS = [/^\/temas\.css$/, /^\/aparencia\/modo$/, /^\/login$/, /^\/static\//, /^\/manifest\.webmanifest$/, /^\/sw\.js$/, /^\/healthz$/, /^\/ics\//, /^\/offline$/];
 
 export async function buildApp({ db, config = defaultConfig, logger = true } = {}) {
   const app = Fastify({
@@ -45,6 +48,7 @@ export async function buildApp({ db, config = defaultConfig, logger = true } = {
   app.decorate('deps', deps);
   app.decorateRequest('user', null);
   app.decorateRequest('counts', null);
+  app.decorateRequest('look', null);
 
   await app.register(formbody);
   await app.register(fastifyStatic, {
@@ -72,6 +76,8 @@ export async function buildApp({ db, config = defaultConfig, logger = true } = {
   app.addHook('preHandler', async (req, reply) => {
     const url = req.url.split('?')[0];
     const token = readCookie(req.headers.cookie, COOKIE);
+    const mode = readCookie(req.headers.cookie, 'modo');
+    req.look = { theme: getSetting(db, 'theme'), mode: MODES.includes(mode) ? mode : 'auto' };
     req.user = loadSession(db, token, config.sessionIdleHours);
 
     if (req.method !== 'GET' && req.method !== 'HEAD' && !sameOrigin(req)) {
@@ -108,7 +114,7 @@ export async function buildApp({ db, config = defaultConfig, logger = true } = {
     }));
   });
 
-  for (const r of [authRoutes, todayRoutes, requestRoutes, examRoutes, reportRoutes, agendaRoutes, statsRoutes, adminRoutes, miscRoutes]) {
+  for (const r of [lookRoutes, authRoutes, todayRoutes, requestRoutes, examRoutes, reportRoutes, agendaRoutes, statsRoutes, adminRoutes, miscRoutes]) {
     await app.register(r, deps);
   }
   return app;
