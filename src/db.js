@@ -75,7 +75,6 @@ export const DEFAULT_SETTINGS = {
     { weekday, start: '14:00', end: '17:00' },
   ]),
   slot_step_min: 15,
-  max_electro_per_day: 2,
   horizon_weeks: 8,
   report_header: ['Universidade de Coimbra · CIBIT-ICNAS', 'Laboratório de Ortóptica e Função Visual'],
   report_signer: 'Ortoptista',
@@ -90,9 +89,10 @@ export const DEFAULT_SETTINGS = {
 export function seed(db) {
   const count = db.prepare('SELECT COUNT(*) FROM exam_types').pluck().get();
   if (count === 0) {
-    const ins = db.prepare(`INSERT INTO exam_types (code, name, minutes, is_electro, report_template, sort)
-      VALUES (?, ?, ?, ?, ?, ?)`);
-    db.transaction(() => DEFAULT_EXAM_TYPES.forEach((t, i) => ins.run(...t, i)))();
+    const ins = db.prepare(`INSERT INTO exam_types (code, name, minutes, is_electro, report_template, sort, max_per_day)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`);
+    // Eletrofisiologia: no máximo 2 de cada por dia (editável em Atos / MCDTs).
+    db.transaction(() => DEFAULT_EXAM_TYPES.forEach((t, i) => ins.run(...t, i, t[3] ? 2 : null)))();
   }
   const insSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) insSetting.run(k, JSON.stringify(v));

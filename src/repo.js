@@ -64,14 +64,14 @@ export function scheduleContext(db, fromDate, toDate) {
   const settings = {
     availability: getSetting(db, 'availability'),
     step: getSetting(db, 'slot_step_min'),
-    maxElectro: getSetting(db, 'max_electro_per_day'),
+    maxPerDay: Object.fromEntries(db.prepare('SELECT id, max_per_day FROM exam_types WHERE max_per_day IS NOT NULL').all().map((t) => [t.id, t.max_per_day])),
   };
   const to = `${toDate}T23:59`;
   const from = `${fromDate}T00:00`;
   const busy = [
-    ...db.prepare(`SELECT id, starts_at, ends_at, is_electro FROM exams
+    ...db.prepare(`SELECT id, starts_at, ends_at, exam_type_id FROM exams
       WHERE status IN (${BUSY_STATUSES.map(() => '?').join(',')}) AND starts_at < ? AND ends_at > ?`).all(...BUSY_STATUSES, to, from),
-    ...db.prepare(`SELECT id, change_starts_at AS starts_at, change_ends_at AS ends_at, is_electro FROM exams
+    ...db.prepare(`SELECT id, change_starts_at AS starts_at, change_ends_at AS ends_at, exam_type_id FROM exams
       WHERE change_kind = 'mover' AND change_starts_at < ? AND change_ends_at > ?`).all(to, from),
   ];
   const blocks = db.prepare('SELECT starts_at, ends_at FROM blocks WHERE starts_at < ? AND ends_at > ?').all(to, from);
@@ -81,7 +81,7 @@ export function scheduleContext(db, fromDate, toDate) {
 function checkFor(db, exam, startsAt, now) {
   const date = startsAt.slice(0, 10);
   const ctx = scheduleContext(db, date, date);
-  const check = checkSlot(startsAt, exam.minutes, !!exam.is_electro, { ...ctx, now: nowLocal(now), ignoreExamId: exam.id });
+  const check = checkSlot(startsAt, exam.minutes, exam.exam_type_id, { ...ctx, now: nowLocal(now), ignoreExamId: exam.id });
   return check.ok ? { ok: true, endsAt: addMinutes(startsAt, roundUp(exam.minutes, ctx.step)) } : check;
 }
 
@@ -219,7 +219,7 @@ export function reserve(db, { typeId, startsAt, requisition = '', name }, now = 
   return db.transaction(() => {
     const t = db.prepare('SELECT * FROM exam_types WHERE id = ? AND active = 1').get(typeId);
     if (!t) return { ok: false, reason: 'dados_invalidos' };
-    const slot = checkFor(db, { id: 0, minutes: t.minutes, is_electro: t.is_electro }, startsAt, now);
+    const slot = checkFor(db, { id: 0, minutes: t.minutes, exam_type_id: t.id }, startsAt, now);
     if (!slot.ok) return slot;
     const r = db.prepare("INSERT INTO requests (source, booked_by_name) VALUES ('secretariado', ?)").run(name);
     const info = db.prepare(`INSERT INTO exams (request_id, exam_type_id, status, starts_at, ends_at, minutes, is_electro, requisition)

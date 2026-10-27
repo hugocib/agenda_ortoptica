@@ -17,7 +17,7 @@ const ctx = {
 };
 
 test('vaga dentro do horário é aceite e arredonda a duração à grelha', () => {
-  const r = checkSlot(`${TUE}T09:00`, 20, false, ctx);
+  const r = checkSlot(`${TUE}T09:00`, 20, 1, ctx);
   assert.equal(r.ok, true);
   assert.equal(r.end, `${TUE}T09:30`);
 });
@@ -38,17 +38,19 @@ test('recusa sobreposição e bloqueios', () => {
   assert.equal(checkSlot(`${TUE}T09:00`, 20, false, { ...ctx, blocks }).reason, 'bloqueado');
 });
 
-test('limite de eletrofisiologia por dia', () => {
+test('máximo por dia de cada ato', () => {
   const busy = [
-    { id: 1, starts_at: `${TUE}T09:00`, ends_at: `${TUE}T10:30`, is_electro: 1 },
-    { id: 2, starts_at: `${TUE}T10:30`, ends_at: `${TUE}T11:30`, is_electro: 1 },
+    { id: 1, starts_at: `${TUE}T09:00`, ends_at: `${TUE}T10:30`, exam_type_id: 7 },
+    { id: 2, starts_at: `${TUE}T10:30`, ends_at: `${TUE}T11:30`, exam_type_id: 7 },
   ];
-  assert.equal(checkSlot(`${TUE}T11:30`, 60, true, { ...ctx, busy }).reason, 'limite_electro');
-  assert.equal(checkSlot(`${TUE}T11:30`, 20, false, { ...ctx, busy }).ok, true);
+  const c = { ...ctx, busy, maxPerDay: { 7: 2 } };
+  assert.equal(checkSlot(`${TUE}T11:30`, 60, 7, c).reason, 'limite_dia');
+  assert.equal(checkSlot(`${TUE}T11:30`, 60, 8, c).ok, true); // outro ato, sem limite
+  assert.equal(checkSlot(`${TUE}T11:30`, 60, 7, { ...c, ignoreExamId: 2 }).ok, true); // mudar a hora do próprio
 });
 
 test('freeSlots lista as horas possíveis', () => {
-  const days = freeSlots({ fromDate: TUE, days: 7, minutes: 90, isElectro: true, ...ctx });
+  const days = freeSlots({ fromDate: TUE, days: 7, minutes: 90, typeId: 1, ...ctx });
   assert.equal(days.length, 1);
   assert.deepEqual(days[0].times, ['09:00', '09:15', '09:30', '09:45', '10:00', '10:15', '10:30', '10:45', '11:00']);
   assert.equal(capacityMinutes(ctx.availability, '2027-03-01', '2027-03-08'), 210);
@@ -188,6 +190,6 @@ test('vagas não atravessam o almoço', () => {
   const lunchCtx = { ...ctx, availability: [{ weekday: 2, start: '09:00', end: '13:00' }, { weekday: 2, start: '14:00', end: '17:00' }] };
   assert.equal(checkSlot(`${TUE}T12:30`, 60, false, lunchCtx).reason, 'fora_horario');
   assert.equal(checkSlot(`${TUE}T14:00`, 60, false, lunchCtx).ok, true);
-  const [day] = freeSlots({ fromDate: TUE, days: 1, minutes: 60, isElectro: false, ...lunchCtx });
+  const [day] = freeSlots({ fromDate: TUE, days: 1, minutes: 60, typeId: 1, ...lunchCtx });
   assert.ok(!day.times.includes('12:15') && day.times.includes('12:00') && day.times.includes('14:00'));
 });

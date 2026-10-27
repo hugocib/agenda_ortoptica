@@ -5,7 +5,7 @@ import {
   checkLogin, COOKIE, createSession, destroySession, destroyUserSessions, hashPassword,
   readCookie, sessionCookie, validatePasswordStrength, verifyPassword,
 } from '../auth.js';
-import { flash, MARK, pageHead } from '../ui.js';
+import { flash, help, MARK, pageHead } from '../ui.js';
 import { safeBack, send, str } from './util.js';
 
 function loginPage(req, { error = '', username = '', next = '' } = {}) {
@@ -67,15 +67,14 @@ export default async function authRoutes(app, { db, config, limiter }) {
       ${req.user.mustChangePassword ? html`<div class="notice warn"><p>Defina uma palavra-passe sua antes de continuar: <a href="#password">alterar palavra-passe</a>.</p></div>` : ''}
       ${error ? html`<div class="notice err" role="alert">${error}</div>` : ''}
       <section class="sec"><div class="sec-h"><h2>Aspeto</h2><span class="aside"><a href="/aparencia">Ver e escolher temas</a></span></div>
-        <p class="sec-note">Tema atual: <b>${themeById(req.look.theme).name}</b>. O modo claro/escuro fica guardado neste dispositivo.</p>
+        <p class="sec-note">Tema atual: <b>${themeById(req.look.theme).name}</b>. ${help('O modo claro/escuro fica guardado só neste dispositivo.')}</p>
         <form method="post" action="/aparencia/modo" class="toolbar">
           <input type="hidden" name="back" value="/conta">
           <span class="seg" role="radiogroup" aria-label="Modo neste dispositivo">${['auto', 'claro', 'escuro'].map((m) => html`<label><input type="radio" name="modo" value="${m}"${req.look.mode === m ? raw(' checked') : ''}> ${{ auto: 'Automático', claro: 'Claro', escuro: 'Escuro' }[m]}</label>`)}</span>
           <button class="btn" type="submit">Aplicar</button>
         </form>
       </section>
-      <section class="sec" id="notificacoes"><div class="sec-h"><h2>Notificações</h2></div>
-        <p class="sec-note">Aviso no telemóvel ou no computador quando o secretariado faz uma reserva ou pede uma alteração. Tem de ser ativado em cada dispositivo. As notificações só dizem o exame, a hora e quem reservou.</p>
+      <section class="sec" id="notificacoes"><div class="sec-h"><h2>Notificações</h2>${help(html`<p>Aviso quando o secretariado faz uma reserva ou pede uma alteração.</p><p>Ativa-se em cada dispositivo. Só dizem o exame, a hora e quem reservou.</p>`)}</div>
         <div class="push-box" data-push>
           <p class="push-state" data-push-state>As notificações precisam de JavaScript e de a app ser aberta em HTTPS.</p>
           <div class="form-actions">

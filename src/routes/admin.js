@@ -1,81 +1,153 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { z } from 'zod';
-import { html } from '../html.js';
+import { html, raw } from '../html.js';
 import { audit, getSetting, setSetting } from '../db.js';
 import { destroyUserSessions, generatePassword, hashPassword } from '../auth.js';
 import { isBackupName, listBackups, runBackup } from '../backup.js';
 import { fmtNum, getTemplate, numericFields, parseNumber, TEMPLATE_KEYS, TEMPLATES } from '../domain/reports.js';
 import { isTime, toMin } from '../time.js';
-import { flash, icon, pageHead } from '../ui.js';
-import { arr, forbid, idParam, isOrtho, send, str } from './util.js';
+import { flash, help, icon, pageHead, timeSelect } from '../ui.js';
+import { forbid, idParam, isOrtho, send, str } from './util.js';
 
 const WEEKDAYS = [[1, 'Segunda'], [2, 'Terça'], [3, 'Quarta'], [4, 'Quinta'], [5, 'Sexta'], [6, 'Sábado']];
 
 function tabs(active) {
   const t = (href, label, key) => html`<a href="${href}" class="${active === key ? 'active' : ''}">${label}</a>`;
-  return html`<nav class="tabs">${t('/admin', 'Geral', 'geral')}${t('/admin/exames', 'Tipos de exame', 'exames')}${t('/admin/utilizadores', 'Utilizadores', 'users')}${t('/admin/normativos', 'Normativos', 'norms')}</nav>`;
+  return html`<nav class="tabs">${t('/admin', 'Horário', 'geral')}${t('/admin/exames', 'Atos / MCDTs', 'exames')}${t('/admin/reservas', 'Reservas', 'reservas')}${t('/admin/normativos', 'Normativos', 'norms')}${t('/admin/utilizadores', 'Utilizadores', 'users')}${t('/admin/sistema', 'Sistema', 'sistema')}</nav>`;
 }
 
-const ExamTypeSchema = z.object({
-  name: z.string().trim().min(2).max(120),
-  minutes: z.coerce.number().int().min(5).max(480),
-  is_electro: z.enum(['0', '1']),
-  report_template: z.enum(TEMPLATE_KEYS),
-  active: z.enum(['0', '1']),
-  sort: z.coerce.number().int().min(0).max(999),
-});
+/** Janelas de um dia em manhã (começa antes das 13:00) e tarde (a seguinte). */
+function splitDay(availability, wd) {
+  const ws = availability.filter((w) => w.weekday === wd).sort((a, c) => a.start.localeCompare(c.start));
+  const m = ws.find((w) => w.start < '13:00') || null;
+  const t = ws.find((w) => w !== m) || null;
+  return { m, t };
+}
+
+/** Pré-visualização da semana: barras de manhã e tarde numa régua das 07:00 às 21:00. */
+function weekPreview(availability) {
+  const H0 = 7 * 60; const H1 = 21 * 60; const W = 500; const ROW = 26; const LEFT = 34;
+  const x = (t) => LEFT + ((toMin(t) - H0) / (H1 - H0)) * (W - LEFT);
+  const ticks = [];
+  for (let h = 7; h <= 21; h += 1) ticks.push(h);
+  const rows = WEEKDAYS.map(([n, label], i) => {
+    const y = 22 + i * ROW;
+    const bars = availability.filter((w) => w.weekday === n).map((w) => `<rect class="wp-bar" data-day="${n}" x="${x(w.start).toFixed(1)}" y="${y + 4}" width="${(x(w.end) - x(w.start)).toFixed(1)}" height="${ROW - 10}" rx="3"/>`).join('');
+    return `<text class="wp-day" x="0" y="${y + ROW / 2 + 3}">${label.slice(0, 3)}</text><line class="wp-row" x1="${LEFT}" x2="${W}" y1="${y + ROW / 2}" y2="${y + ROW / 2}"/>${bars}`;
+  }).join('');
+  const grid = ticks.map((h) => `<line class="wp-tick" x1="${x(`${String(h).padStart(2, '0')}:00`)}" x2="${x(`${String(h).padStart(2, '0')}:00`)}" y1="16" y2="${22 + WEEKDAYS.length * ROW}"/>${h % 2 === 1 ? `<text class="wp-hour" x="${x(`${String(h).padStart(2, '0')}:00`)}" y="11">${h}h</text>` : ''}`).join('');
+  const total = availability.reduce((a, w) => a + toMin(w.end) - toMin(w.start), 0);
+  return html`<figure class="week-preview" data-h0="${H0}" data-h1="${H1}" data-w="${W}" data-left="${LEFT}" data-row="${ROW}"><svg viewBox="0 0 ${W + 14} ${30 + WEEKDAYS.length * ROW}" role="img" aria-label="Semana: ${Math.round(total / 60)} horas de exames">${raw(grid + rows)}</svg>
+    <figcaption data-total>${Math.round((total / 60) * 10) / 10} h de exames por semana${availability.length ? '' : ' · sem horário definido'}</figcaption></figure>`;
+}
+
+const fmtMin = (m) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${String(m % 60).padStart(2, '0')}` : ''}`);
 
 export default async function adminRoutes(app, { db, config }) {
   app.addHook('preHandler', async (req, reply) => {
     if (req.url.startsWith('/admin') && !isOrtho(req)) return forbid(reply);
   });
 
-  // ---------- Geral ----------
+  // ---------- Horário ----------
   app.get('/admin', async (req, reply) => {
     const availability = getSetting(db, 'availability');
-    const rows = [...availability, ...Array(Math.max(2, 12 - availability.length)).fill({ weekday: '', start: '', end: '' })];
-    const header = getSetting(db, 'report_header');
-    const icsToken = getSetting(db, 'ics_token');
-    const host = req.headers.host;
-    const bookingUrl = `${req.protocol}://${host}/r/${getSetting(db, 'booking_token')}`;
-    const names = getSetting(db, 'booking_names') || [];
-    const backups = listBackups(config.backupDir).slice(0, 15);
+    const step = getSetting(db, 'slot_step_min');
+    const horizon = getSetting(db, 'horizon_weeks');
+    const byDay = Object.fromEntries(WEEKDAYS.map(([n]) => [n, splitDay(availability, n)]));
     return send(reply, req, {
-      title: 'Administração',
+      title: 'Horário',
       active: 'admin',
       body: html`${pageHead('Administração')}${tabs('geral')}${flash(req.query, req)}
-        <section class="sec"><div class="sec-h"><h2>Link de reservas do secretariado</h2></div>
-          <p>Envie este endereço ao secretariado. Quem o tiver vê as vagas livres e reserva sem conta nem dados de doentes; as reservas ficam por confirmar até as confirmar em <a href="/hoje">Hoje</a>.</p>
-          <p><button type="button" class="copy" data-copy="${bookingUrl}" aria-label="Copiar link de reservas">${bookingUrl}${icon('copiar', 'ico xs')}</button> <a href="${bookingUrl}" target="_blank" rel="noopener">Abrir</a></p>
-          <form method="post" action="/admin/reservas" class="stack sheet narrow">
-            <label>Quem pode reservar <span class="opt">um nome por linha; aparece numa lista ao reservar. Vazio = escrevem o nome.</span><textarea name="booking_names" rows="4" maxlength="800">${names.join('\n')}</textarea></label>
+        <form method="post" action="/admin/horario">
+          <section class="sec"><div class="sec-h"><h2>Horário de exames</h2>${help(html`<p>Escolha «—» nos períodos sem exames.</p><p>O intervalo entre a manhã e a tarde é o almoço: nunca tem vagas.</p><p>Mudar o horário não mexe nos exames já marcados.</p>`)}
+            <span class="aside"><button type="button" class="btn link" data-fill-week hidden>Copiar segunda para os outros dias úteis</button></span></div>
+            <div class="sched"><table class="week-grid">
+              <thead><tr><th scope="col"><span class="sr">Dia</span></th><th scope="col" colspan="3">Manhã</th><th scope="col" colspan="3">Tarde</th></tr></thead>
+              <tbody>${WEEKDAYS.map(([n, label]) => {
+                const d = byDay[n];
+                return html`<tr data-day="${n}"><th scope="row">${label}</th>
+                  <td>${timeSelect(`m_start_${n}`, d.m?.start, { from: '07:00', to: '14:00', label: `${label}, manhã, início` })}</td><td class="dash" aria-hidden="true">–</td>
+                  <td>${timeSelect(`m_end_${n}`, d.m?.end, { from: '08:00', to: '15:00', label: `${label}, manhã, fim` })}</td>
+                  <td>${timeSelect(`t_start_${n}`, d.t?.start, { from: '12:00', to: '20:00', label: `${label}, tarde, início` })}</td><td class="dash" aria-hidden="true">–</td>
+                  <td>${timeSelect(`t_end_${n}`, d.t?.end, { from: '13:00', to: '21:00', label: `${label}, tarde, fim` })}</td></tr>`;
+              })}</tbody>
+            </table>
+            ${weekPreview(availability)}</div>
+          </section>
+          <section class="sec"><div class="sec-h"><h2>Marcação</h2></div>
+            <div class="settings-row">
+              <label>Grelha ${help(html`<p>Intervalo entre as horas de início possíveis.</p><p>A duração de cada ato é arredondada para cima a esta grelha (com 15 min, um ato de 20 min ocupa 30).</p>`)}
+                <select name="slot_step_min">${[5, 10, 15, 20, 30].map((n) => html`<option value="${n}"${step === n ? raw(' selected') : ''}>${n} min</option>`)}</select></label>
+              <label>Vagas visíveis ${help('Quantas semanas à frente o secretariado (e a página «Agendar») mostram.')}
+                <select name="horizon_weeks">${[1, 2, 3, 4, 6, 8, 10, 12, 16, 20, 26].map((n) => html`<option value="${n}"${horizon === n ? raw(' selected') : ''}>${n} ${n === 1 ? 'semana' : 'semanas'}</option>`)}</select></label>
+            </div>
+            <p class="muted small">O máximo de exames por dia define-se em cada ato, em <a href="/admin/exames">Atos / MCDTs</a>.</p>
+          </section>
+          <div class="form-actions"><button class="btn primary" type="submit">Guardar horário</button></div>
+        </form>`,
+    });
+  });
+
+  app.post('/admin/horario', async (req, reply) => {
+    const b = req.body || {};
+    const windows = [];
+    for (const [n] of WEEKDAYS) {
+      const pairs = [[str(b[`m_start_${n}`]), str(b[`m_end_${n}`])], [str(b[`t_start_${n}`]), str(b[`t_end_${n}`])]];
+      let lastEnd = '';
+      for (const [st, en] of pairs) {
+        if (!st && !en) continue;
+        if (!isTime(st) || !isTime(en) || toMin(en) <= toMin(st) || (lastEnd && st < lastEnd)) return reply.redirect('/admin?err=horario');
+        windows.push({ weekday: n, start: st, end: en });
+        lastEnd = en;
+      }
+    }
+    const step = Number(str(b.slot_step_min));
+    const horizon = Number(str(b.horizon_weeks));
+    if (![5, 10, 15, 20, 30].includes(step) || !(horizon >= 1 && horizon <= 26)) return reply.redirect('/admin?err=dados_invalidos');
+    db.transaction(() => {
+      setSetting(db, 'availability', windows);
+      setSetting(db, 'slot_step_min', step);
+      setSetting(db, 'horizon_weeks', Math.trunc(horizon));
+      audit(db, req.user.id, 'alterar_horario', 'definicoes', null, { windows, step, horizon });
+    })();
+    return reply.redirect('/admin?msg=guardado');
+  });
+
+  // ---------- Secretariado (link de reservas) ----------
+  app.get('/admin/reservas', async (req, reply) => {
+    const bookingUrl = `${req.protocol}://${req.headers.host}/r/${getSetting(db, 'booking_token')}`;
+    const names = getSetting(db, 'booking_names') || [];
+    return send(reply, req, {
+      title: 'Reservas',
+      active: 'admin',
+      body: html`${pageHead('Administração')}${tabs('reservas')}${flash(req.query, req)}
+        <section class="sec"><div class="sec-h"><h2>Link de reservas</h2>${help(html`<p>Envie este endereço ao secretariado. Quem o tiver vê as vagas livres e reserva, sem conta nem dados de doentes.</p><p>As reservas ficam por confirmar até as confirmar em «Hoje».</p>`)}</div>
+          <p class="link-row"><button type="button" class="copy" data-copy="${bookingUrl}" aria-label="Copiar link de reservas">${bookingUrl}${icon('copiar', 'ico xs')}</button>
+            <a class="btn ghost" href="${bookingUrl}" target="_blank" rel="noopener">Abrir</a>
+            <form method="post" action="/admin/reservas/link" class="inline"><button class="btn" data-confirm="Criar um link novo? O atual deixa de funcionar e terá de enviar o novo ao secretariado.">Gerar link novo</button></form></p>
+        </section>
+        <section class="sec"><div class="sec-h"><h2>Quem reserva</h2>${help('Um nome por linha. Aparecem numa lista ao reservar. Se ficar vazio, escrevem o nome.')}</div>
+          <form method="post" action="/admin/reservas" class="stack narrow-form">
+            <textarea name="booking_names" rows="5" maxlength="800" aria-label="Nomes de quem reserva, um por linha">${names.join('\n')}</textarea>
             <div><button class="btn primary" type="submit">Guardar nomes</button></div>
           </form>
-          <form method="post" action="/admin/reservas/link" class="inline"><button class="btn" data-confirm="Criar um link novo? O atual deixa de funcionar e terá de enviar o novo ao secretariado.">Gerar link novo</button></form>
-        </section>
-        <section class="sec"><div class="sec-h"><h2>Horário de exames</h2></div>
-          <p class="sec-note">Uma linha por período. Para manhã e tarde, ponha duas linhas para o mesmo dia (p. ex. 09:00–13:00 e 14:00–17:00): o intervalo entre elas é o almoço e nunca tem vagas.</p>
-          <form method="post" action="/admin/horario" class="stack">
-            <table class="table compact-table"><thead><tr><th>Dia</th><th>Início</th><th>Fim</th></tr></thead><tbody>
-            ${rows.map((w) => html`<tr>
-              <td><select name="weekday"><option value="">—</option>${WEEKDAYS.map(([n, l]) => html`<option value="${n}"${w.weekday === n ? html` selected` : ''}>${l}</option>`)}</select></td>
-              <td><input type="time" name="start" step="900" value="${w.start}"></td>
-              <td><input type="time" name="end" step="900" value="${w.end}"></td></tr>`)}
-            </tbody></table>
-            <div class="grid3">
-              <label>Grelha (min)<select name="slot_step_min">${[5, 10, 15, 20, 30].map((n) => html`<option${getSetting(db, 'slot_step_min') === n ? html` selected` : ''}>${n}</option>`)}</select></label>
-              <label>Máx. eletrofisiologia por dia<input type="number" name="max_electro_per_day" min="0" max="10" value="${getSetting(db, 'max_electro_per_day')}"></label>
-              <label>Mostrar vagas para (semanas)<input type="number" name="horizon_weeks" min="1" max="26" value="${getSetting(db, 'horizon_weeks')}"></label>
-            </div>
-            <p class="muted small">Mudar o horário não altera exames já marcados.</p>
-            <div><button class="btn primary" type="submit">Guardar horário</button></div>
-          </form>
-        </section>
-        <section class="sec"><div class="sec-h"><h2>Cabeçalho e assinatura dos relatórios</h2></div>
+        </section>`,
+    });
+  });
+
+  // ---------- Sistema ----------
+  app.get('/admin/sistema', async (req, reply) => {
+    const header = getSetting(db, 'report_header');
+    const icsUrl = `https://${req.headers.host}/ics/${getSetting(db, 'ics_token')}/agenda.ics`;
+    const backups = listBackups(config.backupDir).slice(0, 15);
+    return send(reply, req, {
+      title: 'Sistema',
+      active: 'admin',
+      body: html`${pageHead('Administração')}${tabs('sistema')}${flash(req.query, req)}
+        <section class="sec"><div class="sec-h"><h2>Relatórios</h2>${help('Cabeçalho e assinatura que aparecem em todos os relatórios. Os já validados não mudam.')}</div>
           <form method="post" action="/admin/relatorio" class="stack">
-            <label>Cabeçalho (uma linha por linha)<textarea name="report_header" rows="3" maxlength="600">${header.join('\n')}</textarea></label>
+            <label>Cabeçalho <span class="opt">uma linha por linha</span><textarea name="report_header" rows="3" maxlength="600">${header.join('\n')}</textarea></label>
             <div class="grid3">
               <label>Função de quem assina<input name="report_signer" maxlength="80" value="${getSetting(db, 'report_signer')}"></label>
               <label>Identificação profissional<input name="report_signer_id" maxlength="120" value="${getSetting(db, 'report_signer_id')}"></label>
@@ -84,48 +156,17 @@ export default async function adminRoutes(app, { db, config }) {
             <div><button class="btn primary" type="submit">Guardar</button></div>
           </form>
         </section>
-        <section class="sec"><div class="sec-h"><h2>Calendário (ICS)</h2></div>
-          <p>Subscreva este endereço no Outlook ou no telemóvel para ver os exames marcados. Só mostra o tipo de exame e a hora, sem dados de doentes.</p>
-          <p><button type="button" class="copy" data-copy="https://${host}/ics/${icsToken}/agenda.ics" aria-label="Copiar endereço do calendário">https://${host}/ics/${icsToken}/agenda.ics${icon('copiar', 'ico xs')}</button></p>
-          <form method="post" action="/admin/ics" class="inline"><button class="btn" data-confirm="Criar novo endereço? O atual deixa de funcionar.">Gerar novo endereço</button></form>
+        <section class="sec"><div class="sec-h"><h2>Calendário (ICS)</h2>${help('Subscreva no Outlook ou no telemóvel para ver os exames marcados. Só mostra o tipo de exame e a hora, sem dados de doentes.')}</div>
+          <p class="link-row"><button type="button" class="copy" data-copy="${icsUrl}" aria-label="Copiar endereço do calendário">${icsUrl}${icon('copiar', 'ico xs')}</button>
+            <form method="post" action="/admin/ics" class="inline"><button class="btn" data-confirm="Criar novo endereço? O atual deixa de funcionar.">Gerar novo endereço</button></form></p>
         </section>
-        <section class="sec"><div class="sec-h"><h2>Cópias de segurança</h2></div>
-          <p class="muted">Automáticas a cada ${config.backupEveryHours} h; guardam-se as últimas ${config.backupKeep}. Pasta no servidor: <code>${config.backupDir}</code>.</p>
-          <form method="post" action="/admin/backups" class="inline"><button class="btn">Fazer cópia agora</button></form>
+        <section class="sec"><div class="sec-h"><h2>Cópias de segurança</h2>${help(html`Automáticas a cada ${config.backupEveryHours} h; guardam-se as últimas ${config.backupKeep}. Pasta no servidor: <code>${config.backupDir}</code>.`)}
+            <span class="aside"><form method="post" action="/admin/backups" class="inline"><button class="btn">Fazer cópia agora</button></form></span></div>
           ${backups.length ? html`<table class="table"><thead><tr><th>Ficheiro</th><th>Tamanho</th><th></th></tr></thead><tbody>
-            ${backups.map((b) => html`<tr><td><code>${b.name}</code></td><td>${(b.size / 1024).toFixed(0)} KB</td><td class="right"><a href="/admin/backups/${b.name}">Descarregar</a></td></tr>`)}
+            ${backups.map((bk) => html`<tr><td><code>${bk.name}</code></td><td>${(bk.size / 1024).toFixed(0)} KB</td><td class="right"><a href="/admin/backups/${bk.name}">Descarregar</a></td></tr>`)}
           </tbody></table>` : html`<p class="notice warn">Ainda não há cópias de segurança.</p>`}
         </section>`,
     });
-  });
-
-  app.post('/admin/horario', async (req, reply) => {
-    const b = req.body || {};
-    const wd = arr(b.weekday);
-    const st = arr(b.start);
-    const en = arr(b.end);
-    const windows = [];
-    for (let i = 0; i < wd.length; i++) {
-      if (!wd[i]) continue;
-      const weekday = Number(wd[i]);
-      if (!(weekday >= 1 && weekday <= 6) || !isTime(st[i]) || !isTime(en[i]) || toMin(en[i]) <= toMin(st[i])) {
-        return reply.redirect('/admin?err=dados_invalidos');
-      }
-      windows.push({ weekday, start: st[i], end: en[i] });
-    }
-    windows.sort((a, c) => a.weekday - c.weekday || a.start.localeCompare(c.start));
-    const step = Number(str(b.slot_step_min));
-    const maxE = Number(str(b.max_electro_per_day));
-    const horizon = Number(str(b.horizon_weeks));
-    if (![5, 10, 15, 20, 30].includes(step) || !(maxE >= 0 && maxE <= 10) || !(horizon >= 1 && horizon <= 26)) return reply.redirect('/admin?err=dados_invalidos');
-    db.transaction(() => {
-      setSetting(db, 'availability', windows);
-      setSetting(db, 'slot_step_min', step);
-      setSetting(db, 'max_electro_per_day', Math.trunc(maxE));
-      setSetting(db, 'horizon_weeks', Math.trunc(horizon));
-      audit(db, req.user.id, 'alterar_horario', 'definicoes', null, { windows, step, maxE, horizon });
-    })();
-    return reply.redirect('/admin?msg=guardado');
   });
 
   app.post('/admin/relatorio', async (req, reply) => {
@@ -138,36 +179,36 @@ export default async function adminRoutes(app, { db, config }) {
       setSetting(db, 'report_medical_line', str(b.report_medical_line) === '1');
       audit(db, req.user.id, 'alterar_relatorio', 'definicoes');
     })();
-    return reply.redirect('/admin?msg=guardado');
+    return reply.redirect('/admin/sistema?msg=guardado');
   });
 
   app.post('/admin/reservas', async (req, reply) => {
     const names = [...new Set(str(req.body?.booking_names).split(/\r?\n/).map((l) => l.trim().slice(0, 60)).filter((l) => l.length >= 2))].slice(0, 30);
     setSetting(db, 'booking_names', names);
     audit(db, req.user.id, 'alterar_nomes_reserva', 'definicoes', null, { n: names.length });
-    return reply.redirect('/admin?msg=guardado');
+    return reply.redirect('/admin/reservas?msg=guardado');
   });
 
   app.post('/admin/reservas/link', async (req, reply) => {
     setSetting(db, 'booking_token', crypto.randomBytes(18).toString('base64url'));
     audit(db, req.user.id, 'regenerar_link_reservas', 'definicoes');
-    return reply.redirect('/admin?msg=link');
+    return reply.redirect('/admin/reservas?msg=link');
   });
 
   app.post('/admin/ics', async (req, reply) => {
     setSetting(db, 'ics_token', crypto.randomBytes(24).toString('base64url'));
     audit(db, req.user.id, 'regenerar_ics', 'definicoes');
-    return reply.redirect('/admin?msg=ics');
+    return reply.redirect('/admin/sistema?msg=ics');
   });
 
   app.post('/admin/backups', async (req, reply) => {
     try {
       const name = await runBackup(db, config.backupDir, config.backupKeep);
       audit(db, req.user.id, 'backup', 'definicoes', null, { name });
-      return reply.redirect('/admin?msg=backup');
+      return reply.redirect('/admin/sistema?msg=backup');
     } catch (err) {
       req.log.error({ err }, 'backup manual falhou');
-      return reply.redirect('/admin?err=backup');
+      return reply.redirect('/admin/sistema?err=backup');
     }
   });
 
@@ -180,54 +221,82 @@ export default async function adminRoutes(app, { db, config }) {
     return reply.type('application/octet-stream').header('Content-Disposition', `attachment; filename="${name}"`).header('Cache-Control', 'no-store').send(fs.createReadStream(file));
   });
 
-  // ---------- Tipos de exame ----------
+  // ---------- Atos / MCDTs ----------
   app.get('/admin/exames', async (req, reply) => {
-    const types = db.prepare('SELECT * FROM exam_types ORDER BY sort, name').all();
-    const row = (t) => html`<form method="post" action="${t ? `/admin/exames/${t.id}` : '/admin/exames'}" class="type-row${t && !t.active ? ' inactive' : ''}">
-      <input name="name" value="${t?.name || ''}" required maxlength="120" aria-label="Nome" placeholder="Nome do exame">
-      <input name="minutes" type="number" min="5" max="480" value="${t?.minutes ?? 30}" aria-label="Minutos" class="num">
-      <select name="is_electro" aria-label="Eletrofisiologia"><option value="0">—</option><option value="1"${t?.is_electro ? html` selected` : ''}>Eletro</option></select>
-      <select name="report_template" aria-label="Modelo de relatório">${TEMPLATE_KEYS.map((k) => html`<option value="${k}"${(t?.report_template || 'generico') === k ? html` selected` : ''}>${TEMPLATES[k].title}</option>`)}</select>
-      <select name="active" aria-label="Ativo"><option value="1">Ativo</option><option value="0"${t && !t.active ? html` selected` : ''}>Inativo</option></select>
-      <input name="sort" type="number" min="0" max="999" value="${t?.sort ?? types.length}" aria-label="Ordem" class="num small-num">
-      <button class="btn ${t ? '' : 'primary'}" type="submit">${t ? 'Guardar' : 'Adicionar'}</button>
-    </form>`;
+    const types = db.prepare('SELECT * FROM exam_types ORDER BY active DESC, sort, name').all();
+    const step = getSetting(db, 'slot_step_min');
+    const durations = (current) => {
+      const opts = [];
+      for (let m = step; m <= 240; m += step) opts.push(m);
+      for (const m of [270, 300, 360, 420, 480]) if (m % step === 0) opts.push(m);
+      if (current && !opts.includes(current)) { opts.push(current); opts.sort((a, c) => a - c); }
+      return opts;
+    };
+    const durSelect = (name, value, label) => html`<select name="${name}" class="dur-sel" data-duration data-step="${step}" aria-label="${label}">${durations(value).map((m) => html`<option value="${m}"${m === value ? raw(' selected') : ''}>${fmtMin(m)}</option>`)}</select>`;
+    const blocks = (min) => html`<span class="blocks" aria-hidden="true">${Array.from({ length: Math.min(16, Math.ceil(min / step)) }, () => html`<i></i>`)}${Math.ceil(min / step) > 16 ? html`<b>+${Math.ceil(min / step) - 16}</b>` : ''}</span>`;
     return send(reply, req, {
-      title: 'Tipos de exame',
+      title: 'Atos / MCDTs',
       active: 'admin',
       body: html`${pageHead('Administração')}${tabs('exames')}${flash(req.query, req)}
-        <section class="sec">
-          <p class="muted">A duração inclui a preparação e define quanto tempo cada reserva ocupa. Mudar a duração não altera exames já marcados. Para deixar de usar um exame, ponha «Inativo» em vez de o apagar.</p>
-          <div class="type-head"><span>Nome</span><span>Min</span><span>Tipo</span><span>Relatório</span><span>Estado</span><span>Ordem</span><span></span></div>
-          ${types.map(row)}
-          <h3 class="day-label">Novo tipo de exame</h3>
-          ${row(null)}
+        <section class="sec"><div class="sec-h"><h2>Atos / MCDTs</h2>${help(html`<p><b>Duração</b>: tempo total do ato, com preparação. É o que cada reserva ocupa na agenda. Cada quadrado = ${step} min da grelha.</p><p><b>Máx./dia</b>: limite de exames desse ato no mesmo dia (p. ex. eletrofisiologia). «—» = sem limite.</p><p>Mudar a duração não altera exames já marcados. Para deixar de usar um ato, desmarque «Ativo» em vez de o apagar.</p>`)}</div>
+          <form method="post" action="/admin/exames" class="acts-form">
+            <table class="acts">
+              <thead><tr><th scope="col">Ato</th><th scope="col">Duração</th><th scope="col" class="hide-m">Ocupa</th><th scope="col">Máx./dia</th><th scope="col">Relatório</th><th scope="col">Ativo</th></tr></thead>
+              <tbody>${types.map((t) => html`<tr class="${t.active ? '' : 'inactive'}">
+                <td><input name="name.${t.id}" value="${t.name}" required maxlength="120" aria-label="Nome"></td>
+                <td>${durSelect(`minutes.${t.id}`, t.minutes, `Duração de ${t.name}`)}</td>
+                <td class="hide-m">${blocks(t.minutes)}</td>
+                <td><select name="max.${t.id}" class="max-sel" aria-label="Máximo por dia de ${t.name}"><option value="">—</option>${Array.from({ length: 10 }, (_, i) => i + 1).map((n) => html`<option${t.max_per_day === n ? raw(' selected') : ''}>${n}</option>`)}</select></td>
+                <td><select name="tpl.${t.id}" aria-label="Modelo de relatório de ${t.name}">${TEMPLATE_KEYS.map((k) => html`<option value="${k}"${t.report_template === k ? raw(' selected') : ''}>${TEMPLATES[k].title}</option>`)}</select></td>
+                <td class="center"><input type="checkbox" name="active.${t.id}" value="1"${t.active ? raw(' checked') : ''} aria-label="${t.name} ativo"></td>
+              </tr>`)}</tbody>
+            </table>
+            <div class="form-actions sticky-bar"><button class="btn primary" type="submit">Guardar alterações</button></div>
+          </form>
+        </section>
+        <section class="sec quiet"><div class="sec-h"><h2>Novo ato</h2></div>
+          <form method="post" action="/admin/exames/novo" class="toolbar">
+            <label>Nome<input name="name" required maxlength="120" placeholder="p. ex. Campo visual"></label>
+            <label>Duração ${durSelect('minutes', 30, 'Duração')}</label>
+            <button class="btn" type="submit">Adicionar</button>
+          </form>
         </section>`,
     });
   });
 
-  const saveType = (req, reply, id) => {
+  app.post('/admin/exames', async (req, reply) => {
     const b = req.body || {};
-    const parsed = ExamTypeSchema.safeParse(Object.fromEntries(['name', 'minutes', 'is_electro', 'report_template', 'active', 'sort'].map((k) => [k, str(b[k])])));
-    if (!parsed.success) return reply.redirect('/admin/exames?err=dados_invalidos');
-    const v = { ...parsed.data, is_electro: Number(parsed.data.is_electro), active: Number(parsed.data.active) };
-    if (id) {
-      db.prepare(`UPDATE exam_types SET name=@name, minutes=@minutes, is_electro=@is_electro,
-        report_template=@report_template, active=@active, sort=@sort WHERE id=@id`).run({ ...v, id });
-      audit(db, req.user.id, 'alterar', 'tipo_exame', id, { minutes: v.minutes, active: v.active });
-    } else {
-      const code = `t${crypto.randomBytes(4).toString('hex')}`;
-      const info = db.prepare(`INSERT INTO exam_types (code, name, minutes, is_electro, report_template, active, sort)
-        VALUES (@code, @name, @minutes, @is_electro, @report_template, @active, @sort)`).run({ ...v, code });
-      audit(db, req.user.id, 'criar', 'tipo_exame', Number(info.lastInsertRowid));
+    const types = db.prepare('SELECT * FROM exam_types').all();
+    const rows = [];
+    for (const t of types) {
+      if (b[`name.${t.id}`] === undefined) continue;
+      const name = str(b[`name.${t.id}`]).trim().slice(0, 120);
+      const minutes = Number.parseInt(str(b[`minutes.${t.id}`]), 10);
+      const maxRaw = str(b[`max.${t.id}`]);
+      const max = maxRaw === '' ? null : Number.parseInt(maxRaw, 10);
+      const tpl = str(b[`tpl.${t.id}`]);
+      if (name.length < 2 || !(minutes >= 5 && minutes <= 480) || (max !== null && !(max >= 1 && max <= 20)) || !TEMPLATE_KEYS.includes(tpl)) {
+        return reply.redirect('/admin/exames?err=dados_invalidos');
+      }
+      rows.push({ id: t.id, name, minutes, max, tpl, active: str(b[`active.${t.id}`]) === '1' ? 1 : 0 });
     }
+    db.transaction(() => {
+      const up = db.prepare('UPDATE exam_types SET name = @name, minutes = @minutes, max_per_day = @max, report_template = @tpl, active = @active WHERE id = @id');
+      for (const r of rows) up.run(r);
+      audit(db, req.user.id, 'alterar', 'tipo_exame', null, { n: rows.length });
+    })();
     return reply.redirect('/admin/exames?msg=guardado');
-  };
-  app.post('/admin/exames', async (req, reply) => saveType(req, reply, null));
-  app.post('/admin/exames/:id', async (req, reply) => {
-    const id = idParam(req);
-    if (!id || !db.prepare('SELECT 1 FROM exam_types WHERE id = ?').get(id)) return reply.callNotFound();
-    return saveType(req, reply, id);
+  });
+
+  app.post('/admin/exames/novo', async (req, reply) => {
+    const name = str(req.body?.name).trim().slice(0, 120);
+    const minutes = Number.parseInt(str(req.body?.minutes), 10);
+    if (name.length < 2 || !(minutes >= 5 && minutes <= 480)) return reply.redirect('/admin/exames?err=dados_invalidos');
+    const sort = db.prepare('SELECT COALESCE(MAX(sort), 0) + 1 FROM exam_types').pluck().get();
+    const info = db.prepare(`INSERT INTO exam_types (code, name, minutes, is_electro, report_template, active, sort)
+      VALUES (?, ?, ?, 0, 'generico', 1, ?)`).run(`t${crypto.randomBytes(4).toString('hex')}`, name, minutes, sort);
+    audit(db, req.user.id, 'criar', 'tipo_exame', Number(info.lastInsertRowid));
+    return reply.redirect('/admin/exames?msg=guardado');
   });
 
   // ---------- Utilizadores ----------

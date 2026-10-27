@@ -43,7 +43,7 @@ export default async function lookRoutes(app, { db }) {
       wide: true,
       body: html`${pageHead('Aspeto', {
         back: { href: '/conta', label: 'A minha conta' },
-        sub: ortho ? 'O tema aplica-se a toda a app, incluindo a página de reservas do secretariado. O modo claro/escuro é escolhido em cada dispositivo.' : 'O tema é escolhido pelo ortoptista. O modo claro/escuro é escolhido em cada dispositivo.',
+        info: ortho ? 'O tema aplica-se a toda a app, incluindo a página de reservas do secretariado. O modo claro/escuro é escolhido em cada dispositivo.' : 'O tema é escolhido pelo ortoptista. O modo claro/escuro é escolhido em cada dispositivo.',
       })}
       ${flash(req.query, req)}
       <form method="post" action="/aparencia/modo" class="toolbar">

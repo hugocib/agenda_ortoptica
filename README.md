@@ -57,12 +57,12 @@ Com HTTPS (Nginx Proxy Manager com certificado), a app instala-se como app, os b
 
 ## 4. Primeiros passos na app
 
-1. **Administração → Geral → Horário:** uma linha por período. Para manhã e tarde, duas linhas no mesmo dia (p. ex. 09:00–13:00 e 14:00–17:00); o intervalo entre elas é o almoço e nunca tem vagas. Confirme também a grelha (15 min), o máximo de exames de eletrofisiologia por dia e quantas semanas de vagas se mostram.
-2. **Administração → Geral → Link de reservas:** copie o link e envie-o ao secretariado. Ponha os nomes de quem reserva (um por linha) para aparecerem numa lista. Se o link for parar a quem não deve, «Gerar link novo» desativa o anterior.
-3. **Administração → Tipos de exame:** confirme as durações (com preparação). É a duração que cada reserva ocupa.
+1. **Administração → Horário:** uma linha por dia, com manhã e tarde (horas em 24 h; «—» = sem exames nesse período). O intervalo entre a manhã e a tarde é o almoço e nunca tem vagas. «Copiar segunda para os outros dias úteis» preenche a semana de uma vez, e a pré-visualização mostra a semana enquanto escolhe. Aqui também se define a grelha (15 min) e quantas semanas de vagas se mostram.
+2. **Administração → Atos / MCDTs:** a duração de cada ato (com preparação), que é o tempo que cada reserva ocupa (os quadrados mostram quantos blocos da grelha), e o máximo por dia, se houver (p. ex. 2 ERG por dia). Tudo numa tabela, com um só «Guardar».
+3. **Administração → Reservas:** copie o link e envie-o ao secretariado. Ponha os nomes de quem reserva (um por linha) para aparecerem numa lista. Se o link for parar a quem não deve, «Gerar link novo» desativa o anterior.
 4. **Administração → Normativos:** introduza só os limites que o laboratório validou. Sem normativo, o valor aparece sem classificação.
 5. **A minha conta → Aspeto:** escolha um dos 12 temas (cor, letra e forma) e o modo claro/escuro de cada dispositivo.
-6. **Administração → Calendário (ICS):** pode subscrever o endereço no Outlook para ver os exames no seu calendário (as reservas por confirmar aparecem como «[por confirmar]»). O calendário não mostra dados de doentes.
+6. **Administração → Sistema → Calendário (ICS):** pode subscrever o endereço no Outlook para ver os exames no seu calendário (as reservas por confirmar aparecem como «[por confirmar]»). O calendário não mostra dados de doentes.
 
 ### Os dois circuitos
 ```
@@ -149,6 +149,8 @@ Desenvolvimento sem Docker: `npm install`, `npm test`, `npm run dev` (abre em `h
 - **Cor com significado fixo em todos os temas.** Cor de ação; âmbar = algo em dívida (por confirmar, por fazer); vermelho = atrasado, falta, recusa ou erro; tinta = feito; verde só para confirmar que algo ficou guardado. O significado está sempre também no texto. Nos relatórios, OD a vermelho e OE a azul (convenção clínica).
 - **Sem caixas desnecessárias:** as secções assentam numa linha. Só os formulários, a caixa «Por confirmar» e o relatório têm folha própria. No telemóvel, a navegação passa para baixo e as tabelas viram linhas de texto corrido.
 - **Modo claro/escuro** automático ou escolhido em cada dispositivo (o escuro é útil no laboratório de eletrofisiologia). O relatório impresso é sempre claro.
+- **Ajuda sem ocupar espaço:** as explicações ficam num «?» ao lado do título, que abre ao passar o rato ou ao tocar.
+- **Horas sempre em 24 h**, em listas, qualquer que seja a língua do browser (os campos de hora nativos mostravam AM/PM).
 - **Pormenores de trabalho:** a requisição e o processo copiam-se com um toque; depois de «Executado no Siima» ou «Realizado», a mensagem tem «Desfazer»; os valores fora dos normativos ficam assinalados (↓/↑) enquanto se escreve; antes de enviar um relatório, um pedido ou uma reserva, a app confirma que o servidor responde e, se não responder, nada se perde do que foi escrito.
 
 ## 9. Limitações conhecidas

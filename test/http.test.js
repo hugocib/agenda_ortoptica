@@ -87,12 +87,15 @@ test('fora do circuito: pedido → agendar → marcado no Siima → realizado �
   assert.match(clash.headers.location, /err=sobreposicao/);
   // Encostado ao primeiro (ERG 90 min → 10:30): aceite
   assert.match((await post(app, `/exames/${exam2}/agendar`, sec, { starts_at: `${tue}T10:30` })).headers.location, /msg=agendado/);
-  // Terceiro exame de eletrofisiologia no mesmo dia: limite
+  // Máximo por dia do ato (PEV: 2): o segundo cabe, o terceiro não
   const c3 = await post(app, '/pedidos', sec, { patient_process: '777', origin: 'externo', priority: 'normal', exam_type_id: types.pev });
   const exam3 = Number(c3.headers.location.split('/')[2]);
-  assert.match((await post(app, `/exames/${exam3}/agendar`, sec, { starts_at: `${tue}T11:30` })).headers.location, /err=limite_electro/);
+  assert.match((await post(app, `/exames/${exam3}/agendar`, sec, { starts_at: `${tue}T14:00` })).headers.location, /msg=agendado/);
+  const c4 = await post(app, '/pedidos', sec, { patient_process: '778', origin: 'externo', priority: 'normal', exam_type_id: types.pev });
+  const exam4 = Number(c4.headers.location.split('/')[2]);
+  assert.match((await post(app, `/exames/${exam4}/agendar`, sec, { starts_at: `${tue}T15:00` })).headers.location, /err=limite_dia/);
   // Hora inválida
-  assert.match((await post(app, `/exames/${exam3}/agendar`, sec, { starts_at: 'amanhã' })).headers.location, /err=hora_invalida/);
+  assert.match((await post(app, `/exames/${exam4}/agendar`, sec, { starts_at: 'amanhã' })).headers.location, /err=hora_invalida/);
 
   // Marca no Siima
   assert.match((await post(app, `/exames/${examId}/siima-marcado`, sec, { back: '/hoje' })).headers.location, /msg=siima_marcado/);
@@ -215,8 +218,38 @@ test('todas as páginas principais abrem sem erro', async () => {
   const { app } = await makeApp();
   const cookie = await login(app, 'hugo');
   for (const url of ['/hoje', '/agenda', '/pedidos', '/pedidos?f=todos', '/pedidos/novo', '/bloqueios', '/estatistica', '/admin', '/admin/exames',
-    '/admin/utilizadores', '/admin/normativos', '/conta', '/aparencia', '/offline', '/manifest.webmanifest', '/temas.css']) {
+    '/admin/utilizadores', '/admin/normativos', '/admin/reservas', '/admin/sistema', '/conta', '/aparencia', '/offline', '/manifest.webmanifest', '/temas.css']) {
     const r = await get(app, url, cookie);
     assert.equal(r.statusCode, 200, url);
   }
+});
+
+test('horário semanal (manhã/tarde, 24 h) e atos com máximo por dia', async () => {
+  const { app, db } = await makeApp();
+  const hugo = await login(app, 'hugo');
+  const page = await get(app, '/admin', hugo);
+  assert.ok(!page.body.includes('type="time"'), 'horas em listas de 24 h, não type=time');
+  assert.match(page.body, /<option selected>09:00<\/option>/);
+  const form = { slot_step_min: '15', horizon_weeks: '8' };
+  for (const d of [1, 2, 3, 4, 5]) Object.assign(form, { [`m_start_${d}`]: '09:00', [`m_end_${d}`]: '13:00', [`t_start_${d}`]: '14:00', [`t_end_${d}`]: '18:00' });
+  assert.match((await post(app, '/admin/horario', hugo, form)).headers.location, /msg=guardado/);
+  assert.equal(getSetting(db, 'availability').length, 10);
+  // Tarde a começar antes de a manhã acabar: recusado
+  assert.match((await post(app, '/admin/horario', hugo, { ...form, t_start_1: '12:00' })).headers.location, /err=horario/);
+  // Período só com início: recusado
+  assert.match((await post(app, '/admin/horario', hugo, { ...form, t_end_2: '' })).headers.location, /err=horario/);
+
+  const t = db.prepare("SELECT * FROM exam_types WHERE code = 'oct'").get();
+  const all = db.prepare('SELECT * FROM exam_types').all();
+  const body = {};
+  for (const x of all) Object.assign(body, { [`name.${x.id}`]: x.name, [`minutes.${x.id}`]: String(x.minutes), [`max.${x.id}`]: x.max_per_day ? String(x.max_per_day) : '', [`tpl.${x.id}`]: x.report_template, ...(x.active ? { [`active.${x.id}`]: '1' } : {}) });
+  body[`minutes.${t.id}`] = '30';
+  body[`max.${t.id}`] = '4';
+  assert.match((await post(app, '/admin/exames', hugo, body)).headers.location, /msg=guardado/);
+  const after = db.prepare('SELECT * FROM exam_types WHERE id = ?').get(t.id);
+  assert.equal(after.minutes, 30);
+  assert.equal(after.max_per_day, 4);
+  assert.equal(db.prepare("SELECT max_per_day FROM exam_types WHERE code = 'erg'").pluck().get(), 2);
+  assert.match((await post(app, '/admin/exames/novo', hugo, { name: 'Campo visual', minutes: '45' })).headers.location, /msg=guardado/);
+  assert.equal(db.prepare("SELECT minutes FROM exam_types WHERE name = 'Campo visual'").pluck().get(), 45);
 });

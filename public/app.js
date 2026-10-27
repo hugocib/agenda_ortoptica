@@ -127,7 +127,7 @@
 
   // Aviso ao sair de um formulário com alterações por guardar (relatório, pedido).
   var dirty = false;
-  document.querySelectorAll('form.report-form, form.form-grid').forEach(function (f) {
+  document.querySelectorAll('form.report-form, form.form-grid, form.acts-form, form[action="/admin/horario"]').forEach(function (f) {
     f.addEventListener('input', function () { dirty = true; });
     f.addEventListener('submit', function () { dirty = false; });
   });
@@ -150,6 +150,76 @@
       installEvent = null;
       var box = document.getElementById('instalar');
       if (box) box.hidden = true;
+    });
+  });
+
+  // Ajuda «?»: só uma aberta de cada vez; fecha ao tocar fora ou com Esc.
+  document.addEventListener('click', function (ev) {
+    document.querySelectorAll('details.help[open]').forEach(function (d) { if (!d.contains(ev.target)) d.open = false; });
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape') document.querySelectorAll('details.help[open]').forEach(function (d) { d.open = false; });
+  });
+
+  // Horário: copiar a segunda-feira para terça a sexta.
+  var fill = document.querySelector('[data-fill-week]');
+  if (fill) {
+    fill.hidden = false;
+    fill.addEventListener('click', function () {
+      var src = document.querySelector('tr[data-day="1"]');
+      if (!src) return;
+      var vals = Array.prototype.map.call(src.querySelectorAll('select'), function (s) { return s.value; });
+      ['2', '3', '4', '5'].forEach(function (d) {
+        var row = document.querySelector('tr[data-day="' + d + '"]');
+        if (row) row.querySelectorAll('select').forEach(function (s, i) { s.value = vals[i]; });
+      });
+      dirty = true;
+    });
+  }
+
+  // Horário: a pré-visualização da semana acompanha as horas escolhidas, antes de guardar.
+  var wp = document.querySelector('.week-preview[data-w]');
+  if (wp) {
+    var svg = wp.querySelector('svg');
+    var num = function (k) { return Number(wp.getAttribute('data-' + k)); };
+    var toM = function (t) { return Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5)); };
+    var xOf = function (t) { return num('left') + ((toM(t) - num('h0')) / (num('h1') - num('h0'))) * (num('w') - num('left')); };
+    var redraw = function () {
+      svg.querySelectorAll('rect.wp-bar').forEach(function (r) { r.remove(); });
+      var total = 0;
+      document.querySelectorAll('tr[data-day]').forEach(function (tr) {
+        var d = Number(tr.getAttribute('data-day'));
+        var v = Array.prototype.map.call(tr.querySelectorAll('select'), function (s) { return s.value; });
+        [[v[0], v[1]], [v[2], v[3]]].forEach(function (p) {
+          if (!p[0] || !p[1] || toM(p[1]) <= toM(p[0])) return;
+          total += toM(p[1]) - toM(p[0]);
+          var r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          r.setAttribute('class', 'wp-bar');
+          r.setAttribute('x', xOf(p[0]).toFixed(1));
+          r.setAttribute('y', String(22 + (d - 1) * num('row') + 4));
+          r.setAttribute('width', (xOf(p[1]) - xOf(p[0])).toFixed(1));
+          r.setAttribute('height', String(num('row') - 10));
+          r.setAttribute('rx', '3');
+          svg.appendChild(r);
+        });
+      });
+      var cap = wp.querySelector('[data-total]');
+      if (cap) cap.textContent = (Math.round((total / 60) * 10) / 10).toString().replace('.', ',') + ' h de exames por semana';
+    };
+    document.querySelectorAll('tr[data-day] select').forEach(function (s) { s.addEventListener('change', redraw); });
+    if (fill) fill.addEventListener('click', redraw);
+  }
+
+  // Atos: os quadrados de «Ocupa» acompanham a duração escolhida.
+  document.querySelectorAll('select[data-duration]').forEach(function (sel) {
+    sel.addEventListener('change', function () {
+      var row = sel.closest('tr');
+      var box = row && row.querySelector('.blocks');
+      if (!box) return;
+      var n = Math.ceil(Number(sel.value) / Number(sel.getAttribute('data-step') || 15));
+      box.textContent = '';
+      for (var i = 0; i < Math.min(16, n); i++) box.appendChild(document.createElement('i'));
+      if (n > 16) { var b = document.createElement('b'); b.textContent = '+' + (n - 16); box.appendChild(b); }
     });
   });
 

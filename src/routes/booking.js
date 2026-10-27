@@ -49,14 +49,14 @@ function weekNav(base, monday, first, last, extra = '') {
 }
 
 /** Vagas livres de uma semana para um exame com `minutes` (e, ao mudar, ignorando o próprio). */
-function weekSlots(db, { monday, minutes, isElectro, ignoreExamId = null }) {
+function weekSlots(db, { monday, minutes, typeId, ignoreExamId = null }) {
   const today = todayLocal();
   const horizonEnd = addDays(today, getSetting(db, 'horizon_weeks') * 7);
   const from = monday < today ? today : monday;
   const to = addDays(monday, 7) < horizonEnd ? addDays(monday, 7) : horizonEnd;
   if (from >= to) return { days: [], ctx: null };
   const ctx = scheduleContext(db, from, to);
-  const days = freeSlots({ fromDate: from, days: Math.round((Date.parse(to) - Date.parse(from)) / 86400000), minutes, isElectro, ...ctx, now: nowLocal(), ignoreExamId })
+  const days = freeSlots({ fromDate: from, days: Math.round((Date.parse(to) - Date.parse(from)) / 86400000), minutes, typeId, ...ctx, now: nowLocal(), ignoreExamId })
     .filter((d) => d.times.length);
   return { days, ctx };
 }
@@ -111,7 +111,7 @@ export default async function bookingRoutes(app, { db }) {
     if (monday > last) monday = last;
     const names = getSetting(db, 'booking_names') || [];
     const chosen = decodeURIComponent(readCookie(req.headers.cookie, 'quem') || '');
-    const { days, ctx } = tipo ? weekSlots(db, { monday, minutes: tipo.minutes, isElectro: !!tipo.is_electro }) : { days: [], ctx: null };
+    const { days, ctx } = tipo ? weekSlots(db, { monday, minutes: tipo.minutes, typeId: tipo.id }) : { days: [], ctx: null };
     const reservas = examsWhere(db, `r.source = 'secretariado' AND e.starts_at >= ? AND (e.status IN ('pendente','agendado') OR e.updated_at >= ?)`,
       [`${today}T00:00`, new Date(Date.now() - 14 * 86400000).toISOString()], 'e.starts_at', 300);
 
@@ -120,7 +120,7 @@ export default async function bookingRoutes(app, { db }) {
       pub: true,
       wide: true,
       autorefresh: 120,
-      body: html`${pageHead('Reservar exame', { sub: 'Escolha o exame e depois a hora. A reserva fica «por confirmar» até o ortoptista a confirmar. Não escreva aqui dados do doente.' })}
+      body: html`${pageHead('Reservar exame', { sub: 'Escolha o exame e depois a hora. Sem dados do doente.', info: html`<p>A reserva fica «por confirmar» até o ortoptista a confirmar; o estado aparece na lista de reservas.</p><p>Enquanto não estiver confirmada pode mudar a hora ou anular. Depois de confirmada, pode pedir uma alteração ou o cancelamento.</p>` })}
         ${flash(req.query, req)}
         <div class="book">
           <section class="sec book-new" aria-labelledby="h-nova">
@@ -193,7 +193,7 @@ export default async function bookingRoutes(app, { db }) {
     let monday = mondayOf(isDate(str(req.query.semana)) ? str(req.query.semana) : e.starts_at.slice(0, 10));
     if (monday < first) monday = first;
     if (monday > last) monday = last;
-    const { days, ctx } = canMove ? weekSlots(db, { monday, minutes: e.minutes, isElectro: !!e.is_electro, ignoreExamId: e.id }) : { days: [], ctx: null };
+    const { days, ctx } = canMove ? weekSlots(db, { monday, minutes: e.minutes, typeId: e.exam_type_id, ignoreExamId: e.id }) : { days: [], ctx: null };
     const names = getSetting(db, 'booking_names') || [];
     const chosen = decodeURIComponent(readCookie(req.headers.cookie, 'quem') || '');
     const pending = e.status === 'pendente';

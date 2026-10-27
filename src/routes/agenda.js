@@ -4,7 +4,7 @@ import { audit } from '../db.js';
 import { examsWhere } from '../repo.js';
 import { addDays, fmtDate, fmtDateLong, fmtDateTime, isDate, isTime, mondayOf, nowLocal, todayLocal } from '../time.js';
 import { fmtDuration } from '../domain/tape.js';
-import { cap, dayTapeByPeriod, emptyState, examLine, flash, icon, pageHead, postButton } from '../ui.js';
+import { cap, dayTapeByPeriod, emptyState, examLine, flash, icon, pageHead, postButton, timeSelect } from '../ui.js';
 import { dayData } from './today.js';
 import { idParam, send, str } from './util.js';
 
@@ -62,13 +62,13 @@ export default async function agendaRoutes(app, { db }) {
     return send(reply, req, {
       title: 'Bloqueios',
       active: 'agenda',
-      body: html`${pageHead('Bloqueios', { back: { href: '/agenda', label: 'Agenda' }, sub: 'Férias, formação, MEG, reuniões: períodos em que não se marcam exames externos. Os exames já marcados nesse período não mudam.' })}
+      body: html`${pageHead('Bloqueios', { back: { href: '/agenda', label: 'Agenda' }, info: 'Férias, formação, MEG, reuniões: períodos sem vagas. Os exames já marcados nesse período não mudam.' })}
         ${flash(req.query, req)}
         <form method="post" action="/bloqueios" class="sheet form-grid">
           <label>De *<input type="date" name="date_from" required value="${today}"></label>
           <label>Até <span class="opt">vazio = mesmo dia</span><input type="date" name="date_to"></label>
-          <label>Hora inicial <span class="opt">vazio = dia inteiro</span><input type="time" name="time_from" step="900"></label>
-          <label>Hora final<input type="time" name="time_to" step="900"></label>
+          <label>Hora inicial <span class="opt">«—» = dia inteiro</span>${timeSelect('time_from', '', { from: '07:00', to: '21:00' })}</label>
+          <label>Hora final${timeSelect('time_to', '', { from: '07:00', to: '21:00' })}</label>
           <label class="span2">Motivo *<input name="reason" required maxlength="120" placeholder="p. ex. Férias, Formação MEG"></label>
           <div class="span2 form-actions"><button class="btn primary" type="submit">Bloquear período</button></div>
         </form>

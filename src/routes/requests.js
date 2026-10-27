@@ -33,7 +33,7 @@ function newForm(req, types, values = {}, errors = {}) {
   return {
     title: 'Novo pedido',
     active: 'pedidos',
-    body: html`${pageHead('Novo pedido', { back: { href: '/pedidos', label: 'Pedidos' }, sub: 'Para exames fora do circuito do secretariado: faz o percurso completo, incluindo a marcação no Siima. O doente fica identificado pelo n.º de processo.' })}
+    body: html`${pageHead('Novo pedido', { back: { href: '/pedidos', label: 'Pedidos' }, info: 'Para exames fora do circuito do secretariado: fazem o percurso completo, incluindo a marcação no Siima. O doente fica identificado pelo n.º de processo.' })}
       ${Object.keys(errors).length ? html`<div class="notice err" role="alert">Corrija os campos assinalados.</div>` : ''}
       <form method="post" action="/pedidos" class="sheet form-grid guarded" novalidate>
         <fieldset class="span2">
@@ -49,7 +49,7 @@ function newForm(req, types, values = {}, errors = {}) {
           ${err('exam_type_id')}
           <div class="picks">${types.map((t) => html`<label class="pick">
             <input type="checkbox" name="exam_type_id" value="${t.id}"${selected.has(String(t.id)) ? html` checked` : ''}>
-            <span class="pick-n">${t.name}<small>${t.minutes} min${t.is_electro ? ' · eletrofisiologia' : ''}</small></span></label>`)}</div>
+            <span class="pick-n">${t.name}<small>${t.minutes} min${t.max_per_day ? ` · máx. ${t.max_per_day} por dia` : ''}</small></span></label>`)}</div>
         </fieldset>
         <fieldset>
           <legend>Origem *</legend>

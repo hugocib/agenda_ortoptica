@@ -4,7 +4,7 @@ import { examsWhere } from '../repo.js';
 import { SHOWN_STATUSES } from '../domain/status.js';
 import { dayTape, fmtDuration } from '../domain/tape.js';
 import { addDays, fmtDate, fmtDateLong, nowLocal, todayLocal, weekday } from '../time.js';
-import { ageDays, cap, copyable, dayTapeByPeriod, emptyState, examLine, flash, originTag, pageHead, patientLabel, postButton } from '../ui.js';
+import { ageDays, cap, copyable, dayTapeByPeriod, emptyState, examLine, flash, help, originTag, pageHead, patientLabel, postButton } from '../ui.js';
 import { send } from './util.js';
 
 const BACK = '/hoje';
@@ -113,7 +113,7 @@ function orthoPage(req, db) {
       ])}
       ${flash(req.query, req)}
       ${inbox.length ? html`<section class="sec inbox" id="confirmar" aria-labelledby="h-conf">
-        <div class="sec-h"><h2 id="h-conf">Por confirmar</h2><span class="count owed">${inbox.length}</span><span class="aside">reservas e pedidos do secretariado</span></div>
+        <div class="sec-h"><h2 id="h-conf">Por confirmar</h2><span class="count owed">${inbox.length}</span>${help(html`<p>Reservas e pedidos feitos pelo secretariado no link de reservas.</p><p>Para confirmar uma reserva é preciso o n.º de requisição. Ao recusar, o motivo aparece ao secretariado.</p>`)}</div>
         <ul class="list">${inbox.map((e) => inboxItem(e))}</ul>
       </section>` : ''}
       <div class="work">
@@ -125,8 +125,7 @@ function orthoPage(req, db) {
         </div>
         <aside class="side" aria-label="Pendentes">
           ${porFechar.length ? html`<section class="sec" id="fechar" aria-labelledby="h-fechar">
-            <div class="sec-h"><h2 id="h-fechar">Por fechar</h2><span class="count">${porFechar.length}</span></div>
-            <p class="sec-note">Já passaram e não foram marcados como realizados nem falta.</p>
+            <div class="sec-h"><h2 id="h-fechar">Por fechar</h2><span class="count">${porFechar.length}</span>${help('Já passaram e não foram marcados como realizados nem falta.')}</div>
             <ul class="list">${porFechar.map((e) => html`<li>${examLine(e, { today, when: true, trackOn: false, actions: orthoActions(e) })}</li>`)}</ul>
           </section>` : ''}
           <section class="sec" id="relatorios" aria-labelledby="h-rel">
@@ -146,8 +145,7 @@ function orthoPage(req, db) {
             })}</ul>` : html`<p class="empty clear">Tudo executado no Siima.</p>`}
           </section>
           ${porMarcar.length ? html`<section class="sec" id="marcar" aria-labelledby="h-marcar">
-            <div class="sec-h"><h2 id="h-marcar">Por marcar no Siima</h2><span class="count owed">${porMarcar.length}</span></div>
-            <p class="sec-note">Exames fora do circuito: marque-os também no Siima.</p>
+            <div class="sec-h"><h2 id="h-marcar">Por marcar no Siima</h2><span class="count owed">${porMarcar.length}</span>${help('Exames fora do circuito do secretariado: a marcação no Siima é consigo.')}</div>
             <ul class="list">${porMarcar.map((e) => html`<li class="siima">
               <div><span class="when">${fmtDate(e.starts_at).slice(0, 5)} ${e.starts_at.slice(11)}</span> <a class="ex-title" href="/exames/${e.id}">${e.type_name}</a>
                 <div class="siima-codes"><span>Processo ${copyable(e.patient_process, 'processo')}</span>${e.requisition ? html`<span>Requisição ${copyable(e.requisition, 'requisição')}</span>` : ''}</div></div>

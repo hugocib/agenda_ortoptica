@@ -7,7 +7,7 @@ export const REASONS = {
   fora_horario: 'Fora do horário de exames externos.',
   sobreposicao: 'Sobrepõe-se a outro exame marcado.',
   bloqueado: 'Esse período está bloqueado.',
-  limite_electro: 'Já há o máximo de exames de eletrofisiologia nesse dia.',
+  limite_dia: 'Já há o máximo de exames deste tipo nesse dia.',
   desalinhado: 'A hora de início tem de coincidir com a grelha da agenda.',
 };
 
@@ -19,10 +19,10 @@ const overlaps = (aStart, aEnd, bStart, bEnd) => aStart < bEnd && bStart < aEnd;
 
 /**
  * Verifica se um exame pode começar em `start`.
- * ctx: { availability, step, busy:[{starts_at, ends_at, is_electro, id}], blocks:[{starts_at, ends_at}],
- *        maxElectro, now, ignoreExamId }
+ * ctx: { availability, step, busy:[{starts_at, ends_at, exam_type_id, id}], blocks:[{starts_at, ends_at}],
+ *        maxPerDay: { [typeId]: n }, now, ignoreExamId }
  */
-export function checkSlot(start, minutes, isElectro, ctx) {
+export function checkSlot(start, minutes, typeId, ctx) {
   const step = ctx.step;
   const duration = roundUp(minutes, step);
   const end = addMinutes(start, duration);
@@ -39,18 +39,19 @@ export function checkSlot(start, minutes, isElectro, ctx) {
   for (const b of ctx.blocks) {
     if (overlaps(start, end, b.starts_at, b.ends_at)) return { ok: false, reason: 'bloqueado' };
   }
-  let electroThatDay = 0;
+  let sameTypeThatDay = 0;
   for (const e of ctx.busy) {
     if (ctx.ignoreExamId && e.id === ctx.ignoreExamId) continue;
     if (overlaps(start, end, e.starts_at, e.ends_at)) return { ok: false, reason: 'sobreposicao' };
-    if (e.is_electro && e.starts_at.slice(0, 10) === date) electroThatDay++;
+    if (typeId && e.exam_type_id === typeId && e.starts_at.slice(0, 10) === date) sameTypeThatDay++;
   }
-  if (isElectro && electroThatDay >= ctx.maxElectro) return { ok: false, reason: 'limite_electro' };
+  const max = typeId ? ctx.maxPerDay?.[typeId] : null;
+  if (max && sameTypeThatDay >= max) return { ok: false, reason: 'limite_dia' };
   return { ok: true, end };
 }
 
 /** Lista as horas livres por dia, a partir de fromDate, durante `days` dias. */
-export function freeSlots({ fromDate, days, minutes, isElectro, ...ctx }) {
+export function freeSlots({ fromDate, days, minutes, typeId, ...ctx }) {
   const out = [];
   for (let i = 0; i < days; i++) {
     const date = addDays(fromDate, i);
@@ -60,7 +61,7 @@ export function freeSlots({ fromDate, days, minutes, isElectro, ...ctx }) {
     for (const w of windows) {
       for (let t = toMin(w.start); t + roundUp(minutes, ctx.step) <= toMin(w.end); t += ctx.step) {
         const start = `${date}T${fromMin(t)}`;
-        if (checkSlot(start, minutes, isElectro, ctx).ok) times.push(fromMin(t));
+        if (checkSlot(start, minutes, typeId, ctx).ok) times.push(fromMin(t));
       }
     }
     out.push({ date, times });

@@ -80,6 +80,7 @@ export const ERRORS = {
   sem_requisicao: 'Indique o n.º de requisição para confirmar.',
   mesma_hora: 'Essa já é a hora da reserva.',
   sem_nome: 'Escolha quem está a fazer a reserva.',
+  horario: 'Horário inválido: cada período precisa de início e fim, o fim depois do início, e a tarde depois da manhã.',
   link_invalido: 'Este link de reservas já não é válido. Peça o novo ao ortoptista.',
   sem_permissao: 'Sem permissão para esta ação.',
   hora_invalida: 'Hora ou data inválida.',
@@ -174,9 +175,9 @@ ${body}
 }
 
 /** Título da página com ações à direita. */
-export function pageHead(title, { sub = '', actions = '', back = null } = {}) {
+export function pageHead(title, { sub = '', actions = '', back = null, info = '' } = {}) {
   return html`<div class="page-head">
-    <div class="page-title">${back ? html`<a class="back" href="${back.href}">${icon('esq', 'ico sm')}${back.label}</a>` : ''}<h1>${title}</h1>${sub ? html`<p class="sub">${sub}</p>` : ''}</div>
+    <div class="page-title">${back ? html`<a class="back" href="${back.href}">${icon('esq', 'ico sm')}${back.label}</a>` : ''}<h1>${title}${info ? html` ${help(info)}` : ''}</h1>${sub ? html`<p class="sub">${sub}</p>` : ''}</div>
     ${actions ? html`<div class="page-actions">${actions}</div>` : ''}
   </div>`;
 }
@@ -253,7 +254,7 @@ export function tape(t, row, { emptyText = 'Sem exames.', holdHref = null } = {}
       return html`<li class="t-hold"><span class="t-time"><time>${it.start}</time><time class="end">${it.end}</time></span><span class="t-body"><b>Hora proposta</b> · ${holdHref ? html`<a href="${holdHref(e)}">${e.type_name}</a>` : e.type_name} <span class="muted">(agora ${fmtDate(e.starts_at).slice(0, 5)} ${e.starts_at.slice(11)}${e.change_by_name ? `, pedido de ${e.change_by_name}` : ''})</span></span></li>`;
     }
     const e = it.exam;
-    return html`<li class="t-exam s-${e.status}${e.is_electro ? ' electro' : ''}"><span class="t-time"><time>${it.start}</time><time class="end">${it.end}</time></span>${row(e)}</li>`;
+    return html`<li class="t-exam s-${e.status}"><span class="t-time"><time>${it.start}</time><time class="end">${it.end}</time></span>${row(e)}</li>`;
   })}</ol>`;
 }
 
@@ -282,6 +283,24 @@ export function examLine(e, { actions = '', today = todayLocal(), when: showWhen
     ${actions ? html`<div class="ex-actions">${actions}</div>` : ''}
   </div>`;
 }
+
+/**
+ * Ajuda discreta: um «?» que mostra o texto ao passar o rato ou ao tocar (sem JavaScript:
+ * <details>). Substitui as notas longas que ocupavam espaço permanente.
+ */
+export function help(content, label = 'Ajuda') {
+  return html`<details class="help"><summary aria-label="${label}" title="${label}"><span aria-hidden="true">?</span></summary><div class="help-body" role="note">${content}</div></details>`;
+}
+
+/** Hora sempre em 24 h (os campos type="time" mostram AM/PM conforme a língua do browser). */
+export function timeSelect(name, value, { from = '07:00', to = '21:00', step = 15, empty = '—', label = '' } = {}) {
+  const opts = [];
+  for (let m = toMinLocal(from); m <= toMinLocal(to); m += step) opts.push(fromMinLocal(m));
+  if (value && !opts.includes(value)) { opts.push(value); opts.sort(); }
+  return html`<select name="${name}" class="time-sel"${label ? html` aria-label="${label}"` : ''}>${empty !== null ? html`<option value="">${empty}</option>` : ''}${opts.map((t) => html`<option${t === value ? raw(' selected') : ''}>${t}</option>`)}</select>`;
+}
+const toMinLocal = (t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+const fromMinLocal = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 
 /** «terça, 27 de outubro» → «Terça, 27 de outubro» */
 export function cap(s) { return s ? s[0].toUpperCase() + s.slice(1) : s; }

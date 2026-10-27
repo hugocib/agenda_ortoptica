@@ -6,7 +6,7 @@ import {
 import { freeSlots, roundUp } from '../domain/slots.js';
 import { canTransition, examTrack, ORIGIN_LABEL, SOURCE_LABEL, sourceOf } from '../domain/status.js';
 import { addDays, fmtDate, fmtDateLong, fmtUtcLocal, isLocalDateTime, nowLocal, todayLocal, weekday } from '../time.js';
-import { cap, copyable, emptyState, flash, originTag, pageHead, patientLabel, postButton, when } from '../ui.js';
+import { cap, copyable, emptyState, flash, help, originTag, pageHead, patientLabel, postButton, when } from '../ui.js';
 import { idParam, safeBack, send, str, withMsg, withParam } from './util.js';
 import { inboxItem } from './today.js';
 
@@ -84,7 +84,7 @@ export default async function examRoutes(app, { db }) {
             <div class="sec-h"><h2>Dados</h2></div>
             <dl class="facts">
               <div><dt>Data</dt><dd>${when(e)}${e.ends_at ? `–${e.ends_at.slice(11)}` : ''}</dd></div>
-              <div><dt>Duração</dt><dd>${e.minutes} min${e.is_electro ? ' · eletrofisiologia' : ''}</dd></div>
+              <div><dt>Duração</dt><dd>${e.minutes} min</dd></div>
               <div><dt>Requisição</dt><dd>${copyable(e.requisition, 'requisição')}</dd></div>
               <div><dt>Processo</dt><dd>${copyable(e.patient_process, 'processo')}</dd></div>
               <div><dt>Origem</dt><dd>${ORIGIN_LABEL[e.origin]}${e.project ? ` — ${e.project}` : ''}</dd></div>
@@ -128,7 +128,7 @@ export default async function examRoutes(app, { db }) {
     const weeks = getSetting(db, 'horizon_weeks');
     const days = weeks * 7;
     const ctx = scheduleContext(db, today, addDays(today, days));
-    const slots = freeSlots({ fromDate: today, days, minutes: e.minutes, isElectro: !!e.is_electro, ...ctx, now: nowLocal(), ignoreExamId: e.id });
+    const slots = freeSlots({ fromDate: today, days, minutes: e.minutes, typeId: e.exam_type_id, ...ctx, now: nowLocal(), ignoreExamId: e.id });
     const withTimes = slots.filter((d) => d.times.length);
     const direct = sourceOf(e) === 'direto';
     return send(reply, req, {
@@ -137,10 +137,10 @@ export default async function examRoutes(app, { db }) {
       body: html`${pageHead(html`${e.status === 'por_agendar' ? 'Escolher hora' : 'Mudar a hora'}`, { back: { href: `/exames/${id}`, label: e.type_name } })}
         ${flash(req.query, req)}
         <div class="ctx"><span class="ex-title">${e.type_name}</span><span>${patientLabel(e)}</span>${originTag(e.origin, e.project)}
-          <span class="muted">ocupa <strong>${roundUp(e.minutes, ctx.step)} min</strong>${e.is_electro ? ` · eletrofisiologia, máx. ${ctx.maxElectro} por dia` : ''}</span></div>
+          <span class="muted">ocupa <strong>${roundUp(e.minutes, ctx.step)} min</strong>${ctx.maxPerDay[e.exam_type_id] ? ` · máx. ${ctx.maxPerDay[e.exam_type_id]} por dia` : ''}</span></div>
         ${e.starts_at ? html`<div class="notice warn"><p>Está marcado para <strong>${when(e)}</strong>.${direct ? ' Ao escolher outra hora, desmarque também a antiga no Siima.' : ' O secretariado vê a nova hora no link de reservas; a marcação no Siima é com elas.'}</p></div>` : ''}
         ${withTimes.length ? html`<form method="post" action="/exames/${id}/agendar">
-          <p class="sec-note">Só aparecem vagas livres nas próximas ${weeks} semanas. Um toque numa hora marca-a.</p>
+          <p class="sec-note">Toque numa hora para marcar. ${help(`Só aparecem vagas livres nas próximas ${weeks} semanas (alterável em Administração → Horário).`)}</p>
           <div class="slot-days">${withTimes.map((d) => html`<section class="slot-day"><h2>${cap(fmtDateLong(d.date))} <span class="muted">${fmtDate(d.date)}</span></h2>
             ${slotGroups(d.times, ctx.availability, d.date, (time) => html`<button class="slot" type="submit" name="starts_at" value="${d.date}T${time}" aria-label="${fmtDateLong(d.date)} às ${time}">${time}</button>`)}</section>`)}</div>
         </form>` : html`<p class="empty">Não há vagas nas próximas ${weeks} semanas para um exame de ${roundUp(e.minutes, ctx.step)} min. Pode alargar o horário em <a href="/admin">Administração</a> ou remover <a href="/bloqueios">bloqueios</a>.</p>`}`,
