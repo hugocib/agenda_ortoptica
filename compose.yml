@@ -4,11 +4,15 @@
 services:
   app:
     build: .
-    image: ortoptica-agenda:1.1.2
+    image: ortoptica-agenda:1.1.3
     container_name: ortoptica-agenda
     restart: unless-stopped
     init: true
     env_file: .env
+    environment:
+      # Caminhos dentro do contentor; o DATA_DIR do .env só serve para os volumes abaixo.
+      DATA_DIR: /data
+      BACKUP_DIR: /backups
     volumes:
       # A app corre como utilizador node (uid 1000): as duas pastas têm de lhe pertencer.
       - ${DATA_DIR:-./data}/db:/data            # base de dados SQLite
