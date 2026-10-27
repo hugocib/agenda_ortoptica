@@ -1,0 +1,49 @@
+# Ortóptica — agenda e exames
+# Arranque:   docker compose up -d --build
+# Primeiro utilizador:
+#   docker compose exec app node src/cli.js criar-utilizador hugo "Hugo" ortoptista
+name: ortoptica
+
+services:
+  app:
+    build: .
+    image: ortoptica-agenda:1.1.0
+    restart: unless-stopped
+    init: true
+    environment:
+      TRUST_PROXY: "true"          # a app está atrás do Caddy
+      SESSION_IDLE_HOURS: "10"
+      BACKUP_KEEP: "30"
+      BACKUP_EVERY_HOURS: "24"
+    volumes:
+      # Base de dados num volume Docker (não numa pasta do Windows: o SQLite
+      # pode corromper-se em pastas partilhadas com o Windows).
+      - ortoptica-data:/data
+      # Cópias de segurança numa pasta visível no computador.
+      # Aponte BACKUP_HOST_DIR para uma pasta sincronizada (OneDrive da UC) ou de rede.
+      - ${BACKUP_HOST_DIR:-./backups}:/backups
+    # Sem "ports": a app só é acessível através do Caddy (HTTPS).
+    networks: [internal]
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    depends_on: [app]
+    ports:
+      - "443:443"
+      - "80:80"
+    environment:
+      SITE_HOST: ${SITE_HOST:?Defina SITE_HOST no ficheiro .env (IP ou nome do computador)}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data        # inclui a autoridade de certificação local (root.crt)
+      - caddy-config:/config
+    networks: [internal]
+
+volumes:
+  ortoptica-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  internal:

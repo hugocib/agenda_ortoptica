@@ -1,0 +1,19 @@
+# HTTPS na rede local com certificado próprio (autoridade local do Caddy).
+# É obrigatório HTTPS para a app ser instalável (PWA) e para os cookies seguros.
+{
+	# Quem acede por IP não envia SNI: sem isto, o Caddy não sabe que certificado usar.
+	default_sni {$SITE_HOST}
+	# O Caddy está num contentor: não tenta instalar a autoridade no sistema.
+	skip_install_trust
+}
+
+https://{$SITE_HOST} {
+	tls internal
+	encode gzip
+	reverse_proxy app:3000
+	log {
+		output stdout
+		format console
+	}
+}
+# O Caddy redireciona automaticamente http:// para https://.

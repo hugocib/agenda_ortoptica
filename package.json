@@ -1,0 +1,24 @@
+{
+  "name": "ortoptica-agenda",
+  "version": "1.1.0",
+  "private": true,
+  "description": "Agenda, registo e relatórios de exames de ortóptica e função visual (CIBIT-ICNAS). Corre localmente em Docker.",
+  "type": "module",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test test/*.test.js",
+    "cli": "node src/cli.js"
+  },
+  "dependencies": {
+    "@fastify/formbody": "9.0.1",
+    "@fastify/static": "10.1.8",
+    "better-sqlite3": "13.0.3",
+    "fastify": "5.12.7",
+    "zod": "4.6.7"
+  }
+}
