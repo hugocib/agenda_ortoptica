@@ -13,10 +13,10 @@ App web (PWA) para gerir os exames de ortóptica e função visual no CIBIT-ICNA
 
 ## 1. Fase atual: teste no homelab
 
-Por agora a app corre no homelab (VM Docker), acessível pela Tailscale, **só com dados fictícios**. Antes de entrar qualquer doente real:
+Por agora a app corre no homelab (VM Docker), **só com dados fictícios**. Antes de entrar qualquer doente real:
 
 - **Proteção de dados:** a app guarda o n.º de processo e, opcionalmente, o nome, a data de nascimento e os resultados dos exames, que são dados de saúde. O Encarregado de Proteção de Dados da UC e a direção do ICNAS têm de aprovar o uso e o sítio onde a app corre. Um servidor pessoal não serve para dados de doentes da UC. Os pontos a apresentar estão na secção 8.
-- **Onde vai correr:** numa máquina sempre ligada da UC/ICNAS (servidor ou VM), com HTTPS. A instalação é a mesma da secção 2; só muda a forma de pôr HTTPS à frente (secção 3).
+- **Onde vai correr:** numa máquina sempre ligada da UC/ICNAS (servidor ou VM), com HTTPS. A instalação é a mesma da secção 2, com HTTPS à frente.
 - **Antes de passar a dados reais:** apague a base de dados de teste (pasta `db/` dentro de `DATA_DIR`).
 
 ## 2. Instalação (servidor Linux com Docker)
@@ -46,20 +46,11 @@ Por agora a app corre no homelab (VM Docker), acessível pela Tailscale, **só c
    ```
    Os outros utilizadores (secretariado) criam-se na própria app, em *Administração → Utilizadores*.
 
-## 3. Acesso e HTTPS (Tailscale)
+## 3. Acesso
 
-A app funciona por `http://IP-do-servidor:3000`, mas sem HTTPS o browser **não a deixa instalar como app**, não ativa a página «sem ligação» e não permite os botões de copiar processo/código SAP. Com Tailscale, a forma mais simples de ter HTTPS com certificado válido é o `tailscale serve`, na máquina onde corre a app:
+Abra `http://IP-do-servidor:3000` (ou a porta definida em `APP_PORT`), como as outras apps da rede. Se a puser atrás do Nginx Proxy Manager, ponha `TRUST_PROXY=true` no `.env`.
 
-1. Na consola da Tailscale, em *DNS*, ative **MagicDNS** e **HTTPS Certificates** (uma vez por tailnet).
-2. No servidor:
-   ```
-   sudo tailscale serve --bg 3000
-   ```
-   A app fica em `https://<nome-da-máquina>.<tailnet>.ts.net`, só acessível a quem está na sua tailnet. `tailscale serve status` mostra o endereço; `sudo tailscale serve reset` desliga.
-3. No `.env`, deixe `TRUST_PROXY=true`. Pode também pôr `APP_BIND=127.0.0.1`, para a porta 3000 deixar de estar aberta à rede local e a app só ser acessível pelo endereço HTTPS. Depois corra `docker compose up -d`.
-4. Abra o endereço no Chrome ou no Edge e use o ícone **Instalar** da barra de endereço. No iPhone, use Partilhar → *Adicionar ao ecrã principal*.
-
-Se preferir o seu domínio, pode pôr o Nginx Proxy Manager à frente (proxy para `http://IP:3000`, com certificado). Nesse caso, mantenha `TRUST_PROXY=true`. Se ao guardar algo aparecer «Pedido recusado (origem inválida)», é porque o proxy não está a passar o cabeçalho `Host` original.
+Sem HTTPS, a app funciona toda, mas o browser não a deixa instalar como app e os botões de copiar processo/código SAP não fazem nada (o texto continua visível).
 
 ## 4. Primeiros passos na app
 
@@ -128,13 +119,13 @@ Desenvolvimento sem Docker: `npm install`, `npm test`, `npm run dev` (abre em `h
 | Relatório assinado muda depois | Ao validar, guarda-se uma cópia fixa; reabrir cria histórico |
 | Normativos inventados | A app não traz normativos: cada laboratório introduz os seus |
 | Service worker que mostra dados antigos ou os deixa no disco | Só ficheiros estáticos em cache; páginas com dados nunca ficam em cache (`no-store`); sem rede, aparece uma página a avisar |
-| PWA que não instala na rede local | HTTPS com certificado válido via `tailscale serve` (ou reverse proxy); sem HTTPS a app funciona, mas sem instalação |
+| PWA que não instala na rede local | Instala quando servida por HTTPS (reverse proxy); sem HTTPS funciona como site normal |
 | SQLite em pasta sem permissões ou partilhada | Pasta local do servidor (uid 1000), verificada no arranque; nunca numa pasta de rede/SMB |
 | Sem cópias de segurança | Automáticas, consistentes (API de backup do SQLite) e com rotação |
 | Esquema da BD alterado à mão | Migrações numeradas, aplicadas em transação |
 | Logs com dados pessoais | Os registos não incluem corpos de pedidos, cookies nem o token do calendário |
 | Exportação CSV abre mal ou executa fórmulas no Excel | UTF-8 com BOM e `;`; células começadas por `= + - @` são neutralizadas; sem nomes de doentes |
-| Contentor como root e porta da app exposta | Corre como utilizador `node`; `APP_BIND` limita a porta à própria máquina quando servida pela Tailscale |
+| Contentor como root | Corre como utilizador `node` (uid 1000) |
 | Sem testes | `npm test`: vagas, estados, datas, relatórios, autenticação, CSRF, permissões e o fluxo completo |
 
 ## 8a. Linguagem visual

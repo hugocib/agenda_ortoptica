@@ -21,7 +21,7 @@ export const config = {
   backupKeep: int('BACKUP_KEEP', 30),
   backupEveryHours: int('BACKUP_EVERY_HOURS', 24),
   sessionIdleHours: int('SESSION_IDLE_HOURS', 10),
-  // Só confiar nos cabeçalhos X-Forwarded-* quando há um proxy HTTPS à frente (tailscale serve, NPM).
+  // Só confiar nos cabeçalhos X-Forwarded-* quando há um reverse proxy à frente (ex.: Nginx Proxy Manager).
   trustProxy: process.env.TRUST_PROXY === 'true',
   timeZone: 'Europe/Lisbon',
   logLevel: process.env.LOG_LEVEL || 'info',
