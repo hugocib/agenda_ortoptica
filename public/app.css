@@ -111,7 +111,7 @@ b, strong { font-weight: 700; }
 
 /* Secção: título assente numa linha de tinta, sem caixa à volta. */
 .sec { margin-bottom: 2.25rem; scroll-margin-top: calc(var(--top-h) + 1rem); }
-.sec-h { display: flex; align-items: baseline; gap: 0.6rem; padding-bottom: 0.45rem; border-bottom: var(--rule-w) var(--rule-style) var(--ink); margin-bottom: 0.25rem; }
+.sec-h { display: flex; align-items: center; gap: 0.6rem; padding-bottom: 0.45rem; border-bottom: var(--rule-w) var(--rule-style) var(--ink); margin-bottom: 0.25rem; }
 .sec-h h2, .slot-day h2 { flex: none; font-family: var(--label-font); font-size: var(--label-size); text-transform: var(--label-case); letter-spacing: var(--label-track); font-stretch: var(--label-stretch); }
 .sec-h .aside { margin-left: auto; font-size: 0.875rem; font-weight: 600; color: var(--ink-3); }
 .sec-h .aside a { font-weight: 600; }
@@ -719,16 +719,22 @@ input.small-num { max-width: 4.5rem; }
 }
 
 /* ---------- Ajuda «?» ---------- */
-.help { position: relative; display: inline-block; vertical-align: middle; margin-left: 0.15rem; }
+/* O «?» é uma caixa de tamanho conhecido (em função do texto à volta) e sobe da linha de base
+   uma quantidade fixa, por isso fica centrado em qualquer tamanho/tipo de letra, sem ajustes por contexto. */
+.help {
+  --hs: clamp(1.15rem, 1.2em, 1.55rem);
+  position: relative; display: inline-block; width: var(--hs); height: var(--hs); margin-left: 0.3em;
+  vertical-align: calc(0.37em - var(--hs) / 2); font-size: inherit; line-height: 1;
+}
 .help > summary {
-  list-style: none; cursor: help; display: inline-flex; align-items: center; justify-content: center;
-  width: 1.3rem; height: 1.3rem; border-radius: 50%; border: 1.5px solid var(--ink-3); color: var(--ink-3);
-  font-family: var(--f-body); font-size: 0.78rem; font-weight: 700; line-height: 1; text-transform: none; letter-spacing: 0;
+  list-style: none; cursor: help; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; border: 1.5px solid var(--ink-3); color: var(--ink-3); box-sizing: border-box;
+  font-family: var(--f-body); font-size: calc(var(--hs) * 0.6); font-weight: 700; line-height: 1; text-transform: none; letter-spacing: 0;
 }
 .help > summary::-webkit-details-marker { display: none; }
 .help > summary:hover, .help[open] > summary { border-color: var(--accent); color: var(--accent); }
 /* Alvo de toque maior sem aumentar o círculo. */
-.help > summary::after { content: ""; position: absolute; inset: -0.6rem; }
+.help > summary::after { content: ""; position: absolute; inset: -0.5rem; }
 .help-body {
   display: none; position: absolute; z-index: 25; top: calc(100% + 0.45rem); left: -0.5rem; width: max-content; max-width: min(26rem, 80vw);
   padding: 0.7rem 0.85rem; background: var(--sheet); color: var(--ink-2); border: 1px solid var(--rule-strong); border-radius: var(--r);
@@ -859,12 +865,14 @@ td.acts-col .btn + .btn { margin-left: 0.25rem; }
   .band input.lim { width: 4.8rem; }
 }
 
+/* ---------- Botões em linha: mesma altura ---------- */
+/* Os botões de uma mesma linha têm todos a altura do maior (o «grande» manda), e o texto copiável acompanha-os. */
+.form-actions .btn { min-height: 3rem; }
+.link-row .copy { min-height: 2.5rem; }
+@media (pointer: coarse) { .link-row .copy { min-height: 2.75rem; } }
+
 /* ---------- Revisão de interface (v1.4.2) ---------- */
 /* «?»: centrado na linha do título, não na linha de base do texto. */
-.sec-h .help, .theme-h .help, .fs-head .help { align-self: center; }
-h1 .help, h2 .help { vertical-align: text-top; margin-top: 0.12em; }
-label .help { vertical-align: middle; }
-.sec-note .help { vertical-align: -0.3em; }
 .sec-note.sec-note { margin-bottom: 0.75rem; }
 /* Respirar entre uma folha (formulário) e a secção seguinte, e entre um título e a folha. */
 .sheet + .sec, form.sheet + .sec, .sheet + section, .inbox + .work { margin-top: 2.25rem; }
