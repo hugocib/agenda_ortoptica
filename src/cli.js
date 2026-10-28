@@ -3,6 +3,7 @@
 //   node src/cli.js nova-password <utilizador>
 //   node src/cli.js backup
 //   node src/cli.js utilizadores
+//   node src/cli.js limpar-atividade [--confirmar]
 // As palavras-passe são geradas e mostradas uma vez (não ficam no histórico da shell).
 import { config } from './config.js';
 import { audit, openDb } from './db.js';
@@ -47,8 +48,34 @@ try {
     for (const u of db.prepare('SELECT username, display_name, role, active FROM users ORDER BY username').all()) {
       console.log(`${u.username}\t${u.display_name}\t${u.role}\t${u.active ? 'ativo' : 'inativo'}`);
     }
+  } else if (cmd === 'limpar-atividade') {
+    // Apaga a atividade (pedidos, exames, reservas, relatórios, bloqueios e o histórico deles), por exemplo
+    // depois de testes. Mantém a configuração: utilizadores, horário, atos/MCDTs e fichas, link de reservas,
+    // lista de quem reserva, temas, cabeçalho dos relatórios e notificações.
+    const tables = [
+      ['report_history', 'versões de relatórios'], ['reports', 'relatórios'], ['exams', 'exames e reservas'],
+      ['requests', 'pedidos'], ['blocks', 'bloqueios'],
+    ];
+    const logWhere = "entity IN ('exame', 'pedido', 'bloqueio', 'relatorio')";
+    const counts = tables.map(([t, label]) => [t, label, db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get().n]);
+    const logN = db.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE ${logWhere}`).get().n;
+    for (const [, label, n] of counts) console.log(`${String(n).padStart(6)}  ${label}`);
+    console.log(`${String(logN).padStart(6)}  entradas de histórico desses registos`);
+    if (!args.includes('--confirmar')) {
+      console.log('\nNada foi apagado. Para apagar, repita com --confirmar (é feita uma cópia de segurança antes).');
+    } else {
+      const name = await runBackup(db, config.backupDir, config.backupKeep);
+      console.log(`\nCópia de segurança: ${config.backupDir}/${name}`);
+      db.transaction(() => {
+        for (const [t] of counts) db.prepare(`DELETE FROM ${t}`).run();
+        db.prepare(`DELETE FROM audit_log WHERE ${logWhere}`).run();
+      })();
+      audit(db, null, 'limpar_atividade_cli', 'definicoes', null, Object.fromEntries(counts.map(([t, , n]) => [t, n])));
+      db.exec('VACUUM');
+      console.log('Atividade apagada. A configuração ficou como estava.');
+    }
   } else {
-    fail('Comandos: criar-utilizador, nova-password, backup, utilizadores');
+    fail('Comandos: criar-utilizador, nova-password, backup, utilizadores, limpar-atividade');
   }
 } finally {
   db.close();

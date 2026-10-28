@@ -112,6 +112,7 @@ Se alguma coisa falhar a meio, o script para e a versão anterior continua a cor
 | `docker compose exec app node src/cli.js utilizadores` | listar utilizadores |
 | `docker compose exec app node src/cli.js nova-password <utilizador>` | repor palavra-passe (também reativa a conta) |
 | `docker compose exec app node src/cli.js backup` | cópia de segurança imediata |
+| `docker compose exec app node src/cli.js limpar-atividade` | mostra quantos pedidos, exames, reservas, relatórios e bloqueios existem; com `--confirmar` apaga-os (depois de uma cópia de segurança) e mantém utilizadores, horário, atos/fichas, link de reservas, temas e notificações — útil depois de testes |
 
 Desenvolvimento sem Docker: `npm install`, `npm test`, `npm run dev` (abre em `http://localhost:3000`).
 
