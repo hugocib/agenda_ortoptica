@@ -83,6 +83,8 @@ export const DEFAULT_SETTINGS = {
   report_signer_id: 'Cédula profissional n.º ______',
   report_medical_line: true,
   theme: 'laboratorio',
+  // A página de reservas tem tema próprio e fixo: não muda quando o ortoptista muda o seu.
+  booking_theme: 'laboratorio',
   // Nomes de quem reserva pelo link do secretariado (lista curta, escolhida ao reservar).
   booking_names: [],
 };

@@ -30,7 +30,7 @@ import miscRoutes from './routes/misc.js';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(here, '..', 'public');
 
-const PUBLIC_PATHS = [/^\/r\//, /^\/temas\.css$/, /^\/aparencia\/modo$/, /^\/login$/, /^\/static\//, /^\/manifest\.webmanifest$/, /^\/sw\.js$/, /^\/healthz$/, /^\/ics\//, /^\/offline$/];
+const PUBLIC_PATHS = [/^\/r\//, /^\/aparencia\/modo-reservas$/, /^\/temas\.css$/, /^\/aparencia\/modo$/, /^\/login$/, /^\/static\//, /^\/manifest\.webmanifest$/, /^\/sw\.js$/, /^\/healthz$/, /^\/ics\//, /^\/offline$/];
 
 export async function buildApp({ db, config = defaultConfig, logger = true } = {}) {
   const app = Fastify({
@@ -78,8 +78,10 @@ export async function buildApp({ db, config = defaultConfig, logger = true } = {
   app.addHook('preHandler', async (req, reply) => {
     const url = req.url.split('?')[0];
     const token = readCookie(req.headers.cookie, COOKIE);
-    const mode = readCookie(req.headers.cookie, 'modo');
-    req.look = { theme: getSetting(db, 'theme'), mode: MODES.includes(mode) ? mode : 'auto' };
+    // Página de reservas: tema fixo e modo claro/escuro próprio (cookie só de /r/).
+    const booking = url.startsWith('/r/');
+    const mode = readCookie(req.headers.cookie, booking ? 'modo_r' : 'modo');
+    req.look = { theme: getSetting(db, booking ? 'booking_theme' : 'theme'), mode: MODES.includes(mode) ? mode : 'auto' };
     req.user = loadSession(db, token, config.sessionIdleHours);
 
     if (req.method !== 'GET' && req.method !== 'HEAD' && !sameOrigin(req)) {

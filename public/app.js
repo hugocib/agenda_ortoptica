@@ -169,6 +169,17 @@
     update();
   });
 
+  // Página de reservas: em modo automático, o botão oferece o contrário do que o sistema mostra.
+  var mt = document.querySelector('[data-mode-toggle="auto"]');
+  if (mt && window.matchMedia) {
+    var dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    mt.value = dark ? 'claro' : 'escuro';
+    mt.setAttribute('aria-label', dark ? 'Mudar para modo claro' : 'Mudar para modo escuro');
+    mt.classList.toggle('is-dark', dark);
+    var ml = mt.querySelector('.mode-l');
+    if (ml) ml.textContent = dark ? 'Claro' : 'Escuro';
+  }
+
   // Datas dd/mm/aaaa: as barras aparecem sozinhas enquanto se escreve os números.
   document.querySelectorAll('input[data-date]').forEach(function (inp) {
     inp.addEventListener('input', function (ev) {

@@ -27,7 +27,7 @@ test('link de reservas: token errado não mostra nada; certo mostra vagas sem da
   // As horas são uma escolha (rádio); só o botão de confirmação envia a reserva
   assert.match(page.body, /<input type="radio" name="start"/);
   assert.ok(!/<button class="slot"/.test(page.body));
-  assert.equal((page.body.match(/type="submit"/g) || []).length, 2); // «Ver horas livres» + «Confirmar reserva»
+  assert.equal((page.body.match(/type="submit"/g) || []).length, 3); // claro/escuro + «Ver horas livres» + «Confirmar reserva»
   assert.match(page.body, /Confirmar reserva/);
   assert.match(page.body, /Manhã/);
   assert.match(page.body, /Tarde/);
@@ -250,4 +250,21 @@ test('ficha do ato: criar ato novo, acrescentar parâmetros e normativos por ida
   assert.equal(read().title, 'Eletrorretinograma de campo total');
   // O antigo separador de normativos encaminha para os atos
   assert.equal((await get(app, '/admin/normativos', hugo)).headers.location, '/admin/exames');
+});
+
+test('página de reservas: tema fixo próprio e claro/escuro só para o link', async () => {
+  const { app, db, base, hugo } = await setup();
+  setSetting(db, 'theme', 'ishihara');
+  await post(app, '/admin/reservas/tema', hugo, { theme: 'cianotipia' });
+  assert.equal(getSetting(db, 'booking_theme'), 'cianotipia');
+  const page = await get(app, base);
+  assert.match(page.body, /data-theme="cianotipia" data-mode="auto"/);
+  assert.match((await get(app, '/hoje', hugo)).body, /data-theme="ishihara"/); // a app mantém o seu tema
+  const t = await post(app, '/aparencia/modo-reservas', null, { modo: 'escuro', back: `${base}?tipo=1` });
+  assert.equal(t.headers.location, `${base}?tipo=1`);
+  assert.match(t.headers['set-cookie'], /modo_r=escuro; Path=\/r\//);
+  const dark = await app.inject({ method: 'GET', url: base, headers: { host: 'localhost:80', cookie: 'modo_r=escuro' } });
+  assert.match(dark.body, /data-theme="cianotipia" data-mode="escuro"/);
+  // Não deixa redirecionar para fora das reservas
+  assert.equal((await post(app, '/aparencia/modo-reservas', null, { modo: 'claro', back: '/admin' })).headers.location, '/');
 });

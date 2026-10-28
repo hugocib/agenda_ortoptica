@@ -7,6 +7,7 @@ import { destroyUserSessions, generatePassword, hashPassword } from '../auth.js'
 import { isBackupName, listBackups, runBackup } from '../backup.js';
 import { formFromTemplate, numericFields, parseForm } from '../domain/reports.js';
 import fichaRoutes from './ficha.js';
+import { THEME_IDS, THEMES } from '../themes.js';
 import { isTime, toMin } from '../time.js';
 import { flash, help, icon, pageHead, timeSelect } from '../ui.js';
 import { forbid, idParam, isOrtho, send, str } from './util.js';
@@ -127,6 +128,7 @@ export default async function adminRoutes(app, { db, config }) {
   app.get('/admin/reservas', async (req, reply) => {
     const bookingUrl = `${req.protocol}://${req.headers.host}/r/${getSetting(db, 'booking_token')}`;
     const names = getSetting(db, 'booking_names') || [];
+    const bookingTheme = getSetting(db, 'booking_theme');
     return send(reply, req, {
       title: 'Reservas',
       active: 'admin',
@@ -135,6 +137,13 @@ export default async function adminRoutes(app, { db, config }) {
           <p class="link-row"><button type="button" class="copy" data-copy="${bookingUrl}" aria-label="Copiar link de reservas">${bookingUrl}${icon('copiar', 'ico xs')}</button>
             <a class="btn ghost" href="${bookingUrl}" target="_blank" rel="noopener">Abrir</a>
             <form method="post" action="/admin/reservas/link" class="inline"><button class="btn" data-confirm="Criar um link novo? O atual deixa de funcionar e terá de enviar o novo ao secretariado.">Gerar link novo</button></form></p>
+        </section>
+        <section class="sec"><div class="sec-h"><h2>Aspeto da página</h2>${help('A página de reservas tem um tema fixo, para não mudar quando muda o seu. Cada secretária escolhe claro ou escuro no próprio browser (botão no topo da página).')}</div>
+          <form method="post" action="/admin/reservas/tema" class="toolbar">
+            <label>Tema <select name="theme">${THEMES.map((t) => html`<option value="${t.id}"${t.id === bookingTheme ? raw(' selected') : ''}>${t.name}</option>`)}</select></label>
+            <button class="btn" type="submit">Guardar</button>
+            <a href="/aparencia">Ver os temas</a>
+          </form>
         </section>
         <section class="sec"><div class="sec-h"><h2>Quem reserva</h2>${help('Um nome por linha. Aparecem numa lista ao reservar. Se ficar vazio, escrevem o nome.')}</div>
           <form method="post" action="/admin/reservas" class="stack narrow-form">
@@ -195,6 +204,14 @@ export default async function adminRoutes(app, { db, config }) {
     const names = [...new Set(str(req.body?.booking_names).split(/\r?\n/).map((l) => l.trim().slice(0, 60)).filter((l) => l.length >= 2))].slice(0, 30);
     setSetting(db, 'booking_names', names);
     audit(db, req.user.id, 'alterar_nomes_reserva', 'definicoes', null, { n: names.length });
+    return reply.redirect('/admin/reservas?msg=guardado');
+  });
+
+  app.post('/admin/reservas/tema', async (req, reply) => {
+    const id = str(req.body?.theme);
+    if (!THEME_IDS.includes(id)) return reply.redirect('/admin/reservas?err=dados_invalidos');
+    setSetting(db, 'booking_theme', id);
+    audit(db, req.user.id, 'tema_reservas', 'definicoes', null, { tema: id });
     return reply.redirect('/admin/reservas?msg=guardado');
   });
 

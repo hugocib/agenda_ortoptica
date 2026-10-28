@@ -938,3 +938,12 @@ label .help { vertical-align: middle; }
   .confirm-bar { margin-left: -0.25rem; margin-right: -0.25rem; }
   .confirm-bar .btn { flex: 1 1 100%; }
 }
+
+/* Botão claro/escuro da página de reservas */
+.mode-toggle { margin: 0 0 0 auto; display: flex; align-items: center; }
+.mode-toggle .btn { color: var(--top-ink-2); gap: 0.4rem; }
+.mode-toggle .btn:hover { color: var(--top-ink); background: var(--top-hover); }
+.mode-toggle .mode-light { display: none; }
+[data-mode="escuro"] .mode-toggle .mode-dark, .mode-toggle .is-dark .mode-dark { display: none; }
+[data-mode="escuro"] .mode-toggle .mode-light, .mode-toggle .is-dark .mode-light { display: block; }
+@media (max-width: 760px) { .mode-toggle .mode-l { display: none; } }

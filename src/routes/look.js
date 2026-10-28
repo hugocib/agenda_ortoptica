@@ -43,7 +43,7 @@ export default async function lookRoutes(app, { db }) {
       wide: true,
       body: html`${pageHead('Aspeto', {
         back: { href: '/conta', label: 'A minha conta' },
-        info: ortho ? 'O tema aplica-se a toda a app, incluindo a página de reservas do secretariado. O modo claro/escuro é escolhido em cada dispositivo.' : 'O tema é escolhido pelo ortoptista. O modo claro/escuro é escolhido em cada dispositivo.',
+        info: ortho ? 'O tema aplica-se às suas páginas. A página de reservas do secretariado tem um tema fixo próprio (Administração → Reservas). O modo claro/escuro é escolhido em cada dispositivo.' : 'O tema é escolhido pelo ortoptista. O modo claro/escuro é escolhido em cada dispositivo.',
       })}
       ${flash(req.query, req)}
       <form method="post" action="/aparencia/modo" class="toolbar">
@@ -72,6 +72,15 @@ export default async function lookRoutes(app, { db }) {
     setSetting(db, 'theme', id);
     audit(db, req.user.id, 'tema', 'definicoes', null, { tema: id });
     return reply.redirect(`/aparencia?msg=tema#t-${id}`);
+  });
+
+  // Página de reservas: alterna claro/escuro neste browser (cookie só para /r/, não mexe na app).
+  app.post('/aparencia/modo-reservas', async (req, reply) => {
+    const mode = str(req.body?.modo) === 'escuro' ? 'escuro' : 'claro';
+    const back = safeBack(req.body?.back, '/');
+    const secure = req.protocol === 'https' ? '; Secure' : '';
+    reply.header('set-cookie', `modo_r=${mode}; Path=/r/; Max-Age=${3600 * 24 * 400}; SameSite=Lax${secure}`);
+    return reply.redirect(back.startsWith('/r/') ? back : '/');
   });
 
   // Público (também serve a página de reservas): só grava uma preferência de aspeto neste browser.
