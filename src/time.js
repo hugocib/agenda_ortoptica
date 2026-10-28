@@ -128,3 +128,15 @@ export function ageAt(birthDate, onDate) {
   if (m < bm || (m === bm && d < bd)) age--;
   return age;
 }
+
+/** «28/10/2026» (ou ISO) → «2026-10-28». Se não for reconhecível, devolve o texto (a validação recusa-o). */
+export function toIsoDate(s) {
+  const t = String(s ?? '').trim();
+  if (t === '') return '';
+  const m = t.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
+  if (m) {
+    const iso = `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+    return isDate(iso) ? iso : t;
+  }
+  return t;
+}

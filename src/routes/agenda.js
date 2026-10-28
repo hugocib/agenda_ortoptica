@@ -2,9 +2,9 @@ import { z } from 'zod';
 import { html } from '../html.js';
 import { audit } from '../db.js';
 import { examsWhere } from '../repo.js';
-import { addDays, fmtDate, fmtDateLong, fmtDateTime, isDate, isTime, mondayOf, nowLocal, todayLocal } from '../time.js';
+import { addDays, fmtDate, fmtDateLong, fmtDateTime, isDate, isTime, mondayOf, nowLocal, toIsoDate, todayLocal } from '../time.js';
 import { fmtDuration } from '../domain/tape.js';
-import { cap, dayTapeByPeriod, emptyState, examLine, flash, icon, pageHead, postButton, timeSelect } from '../ui.js';
+import { cap, dateInput, dayTapeByPeriod, emptyState, examLine, flash, icon, pageHead, postButton, timeSelect } from '../ui.js';
 import { dayData } from './today.js';
 import { idParam, send, str } from './util.js';
 
@@ -15,6 +15,18 @@ const BlockSchema = z.object({
   time_to: z.string().refine((v) => v === '' || isTime(v), 'Hora inválida.'),
   reason: z.string().trim().min(1, 'Indique o motivo.').max(120),
 });
+
+/** «03/11/2026 · dia inteiro», «03/11 – 07/11/2026 · dias inteiros» ou «03/11/2026 09:00–10:30». */
+function blockPeriod(b) {
+  const [d1, t1] = [b.starts_at.slice(0, 10), b.starts_at.slice(11)];
+  const [d2, t2] = [b.ends_at.slice(0, 10), b.ends_at.slice(11)];
+  if (t1 === '00:00' && t2 === '00:00') {
+    const last = addDays(d2, -1);
+    return last === d1 ? `${fmtDate(d1)} · dia inteiro` : `${fmtDate(d1).slice(0, 5)} – ${fmtDate(last)} · dias inteiros`;
+  }
+  if (d1 === d2) return `${fmtDate(d1)} ${t1}–${t2}`;
+  return `${fmtDateTime(b.starts_at)} → ${fmtDateTime(b.ends_at)}`;
+}
 
 export default async function agendaRoutes(app, { db }) {
   app.get('/agenda', async (req, reply) => {
@@ -65,8 +77,8 @@ export default async function agendaRoutes(app, { db }) {
       body: html`${pageHead('Bloqueios', { back: { href: '/agenda', label: 'Agenda' }, info: 'Férias, formação, MEG, reuniões: períodos sem vagas. Os exames já marcados nesse período não mudam.' })}
         ${flash(req.query, req)}
         <form method="post" action="/bloqueios" class="sheet form-grid">
-          <label>De *<input type="date" name="date_from" required value="${today}"></label>
-          <label>Até <span class="opt">vazio = mesmo dia</span><input type="date" name="date_to"></label>
+          <label>De *${dateInput('date_from', today, { required: true })}</label>
+          <label>Até <span class="opt">vazio = mesmo dia</span>${dateInput('date_to', '')}</label>
           <label>Hora inicial <span class="opt">«—» = dia inteiro</span>${timeSelect('time_from', '', { from: '07:00', to: '21:00' })}</label>
           <label>Hora final${timeSelect('time_to', '', { from: '07:00', to: '21:00' })}</label>
           <label class="span2">Motivo *<input name="reason" required maxlength="120" placeholder="p. ex. Férias, Formação MEG"></label>
@@ -75,7 +87,7 @@ export default async function agendaRoutes(app, { db }) {
         <section class="sec">
           <div class="sec-h"><h2>Próximos bloqueios</h2>${blocks.length ? html`<span class="count">${blocks.length}</span>` : ''}</div>
           ${blocks.length ? html`<table class="table rt"><thead><tr><th>Período</th><th>Motivo</th><th>Criado por</th><th></th></tr></thead>
-            <tbody>${blocks.map((b) => html`<tr><td class="main-cell"><span class="when">${fmtDateTime(b.starts_at)} → ${fmtDateTime(b.ends_at)}</span></td><td>${b.reason}</td><td class="muted">${b.display_name}</td>
+            <tbody>${blocks.map((b) => html`<tr><td class="main-cell"><span class="when">${blockPeriod(b)}</span></td><td>${b.reason}</td><td class="muted">${b.display_name}</td>
             <td class="right act">${postButton(`/bloqueios/${b.id}/apagar`, 'Remover', { kind: 'link', confirm: 'Remover este bloqueio?' })}</td></tr>`)}</tbody></table>`
             : emptyState('Sem bloqueios futuros.')}
         </section>`,
@@ -84,7 +96,7 @@ export default async function agendaRoutes(app, { db }) {
 
   app.post('/bloqueios', async (req, reply) => {
     const b = req.body || {};
-    const parsed = BlockSchema.safeParse({ date_from: str(b.date_from), date_to: str(b.date_to), time_from: str(b.time_from), time_to: str(b.time_to), reason: str(b.reason) });
+    const parsed = BlockSchema.safeParse({ date_from: toIsoDate(str(b.date_from)), date_to: toIsoDate(str(b.date_to)), time_from: str(b.time_from), time_to: str(b.time_to), reason: str(b.reason) });
     if (!parsed.success) return reply.redirect('/bloqueios?err=hora_invalida');
     const v = parsed.data;
     const dateTo = v.date_to || v.date_from;

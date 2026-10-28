@@ -65,8 +65,8 @@ function byDay(exams, render) {
 const whenShort = (ldt) => `${cap(fmtDateLong(ldt.slice(0, 10)).split(',')[0]).slice(0, 3)} ${fmtDate(ldt).slice(0, 5)} ${ldt.slice(11)}`;
 
 /** Uma reserva ou pedido de alteração à espera de decisão, com as ações ali mesmo. */
-export function inboxItem(e, back = `${BACK}#confirmar`) {
-  const head = html`<a class="ex-title" href="/exames/${e.id}">${e.type_name}</a>
+export function inboxItem(e, back = `${BACK}#confirmar`, { compact = false } = {}) {
+  const head = html`${compact ? '' : html`<a class="ex-title" href="/exames/${e.id}">${e.type_name}</a>`}
     <div class="ex-meta"><span class="when">${whenShort(e.starts_at)}</span>${e.booked_by_name ? html`<span class="by">por ${e.change_by_name || e.booked_by_name}</span>` : ''}${patientLabel(e)}</div>`;
   if (e.change_kind) {
     const what = e.change_kind === 'mover'

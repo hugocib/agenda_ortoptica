@@ -148,7 +148,7 @@ export default async function adminRoutes(app, { db, config }) {
   // ---------- Sistema ----------
   app.get('/admin/sistema', async (req, reply) => {
     const header = getSetting(db, 'report_header');
-    const icsUrl = `https://${req.headers.host}/ics/${getSetting(db, 'ics_token')}/agenda.ics`;
+    const icsUrl = `${req.protocol}://${req.headers.host}/ics/${getSetting(db, 'ics_token')}/agenda.ics`;
     const backups = listBackups(config.backupDir).slice(0, 15);
     return send(reply, req, {
       title: 'Sistema',

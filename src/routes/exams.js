@@ -6,7 +6,7 @@ import {
 import { freeSlots, roundUp } from '../domain/slots.js';
 import { canTransition, examTrack, ORIGIN_LABEL, SOURCE_LABEL, sourceOf } from '../domain/status.js';
 import { addDays, fmtDate, fmtDateLong, fmtUtcLocal, isLocalDateTime, nowLocal, todayLocal, weekday } from '../time.js';
-import { cap, copyable, emptyState, flash, help, originTag, pageHead, patientLabel, postButton, when } from '../ui.js';
+import { cap, copyable, dateInput, emptyState, flash, help, originTag, pageHead, patientLabel, postButton, when } from '../ui.js';
 import { idParam, safeBack, send, str, withMsg, withParam } from './util.js';
 import { inboxItem } from './today.js';
 
@@ -63,11 +63,11 @@ export default async function examRoutes(app, { db }) {
       active: source === 'direto' ? 'pedidos' : 'agenda',
       body: html`${pageHead(e.type_name, {
           back: source === 'direto' ? { href: `/pedidos/${e.request_id}`, label: html`Pedido <span class="mono">#${e.request_id}</span>` } : { href: '/hoje', label: 'Hoje' },
-          sub: html`${e.starts_at ? html`<span class="when">${cap(fmtDateLong(e.starts_at.slice(0, 10)))} · ${e.starts_at.slice(11)}</span>` : ''}${patientLabel(e)}${originTag(e.origin, e.project)}<span class="track-wrap tone-${t.tone}"><span class="track-label">${t.summary}</span></span>`,
+          sub: html`${e.starts_at ? html`<span class="sub-when">${cap(fmtDateLong(e.starts_at.slice(0, 10)))} · <span class="mono">${e.starts_at.slice(11)}</span></span>` : ''}${patientLabel(e)}${originTag(e.origin, e.project)}<span class="track-wrap tone-${t.tone}"><span class="track-label">${t.summary}</span></span>`,
         })}
         ${flash(req.query, req)}
         ${e.status === 'pendente' || e.change_kind ? html`<section class="sec inbox" id="confirmar"><div class="sec-h"><h2>${e.change_kind ? 'Pedido do secretariado' : 'Reserva por confirmar'}</h2></div>
-          <ul class="list">${inboxItem(e, back)}</ul></section>` : ''}
+          <ul class="list">${inboxItem(e, back, { compact: true })}</ul></section>` : ''}
         ${e.status === 'recusado' && e.decision_note ? html`<div class="notice warn"><p>Recusada: ${e.decision_note}</p></div>` : ''}
         <section class="sec" aria-label="Percurso do exame">
           <p class="route-src">${SOURCE_LABEL[source]}${source === 'secretariado' && e.booked_by_name ? html` · reservado por <b>${e.booked_by_name}</b>` : ''}</p>
@@ -85,21 +85,22 @@ export default async function examRoutes(app, { db }) {
             <dl class="facts">
               <div><dt>Data</dt><dd>${when(e)}${e.ends_at ? `–${e.ends_at.slice(11)}` : ''}</dd></div>
               <div><dt>Duração</dt><dd>${e.minutes} min</dd></div>
-              <div><dt>Requisição</dt><dd>${copyable(e.requisition, 'requisição')}</dd></div>
+              <div><dt>Requisição</dt><dd>${e.requisition ? copyable(e.requisition, 'requisição') : html`<span class="owed-txt">sem requisição</span>`}</dd></div>
               <div><dt>Processo</dt><dd>${copyable(e.patient_process, 'processo')}</dd></div>
               <div><dt>Origem</dt><dd>${ORIGIN_LABEL[e.origin]}${e.project ? ` — ${e.project}` : ''}</dd></div>
               ${e.referrer ? html`<div><dt>Requisitante</dt><dd>${e.referrer}</dd></div>` : ''}
             </dl>
             ${e.notes ? html`<h3 class="day-label">Notas do pedido</h3><p class="notes">${e.notes}</p>` : ''}
-            ${!['cancelado', 'recusado'].includes(e.status) ? html`<form method="post" action="/exames/${id}/requisicao" class="toolbar inline-edit">
-              <label>N.º de requisição <input name="requisition" maxlength="40" value="${e.requisition}" class="mono" autocomplete="off"></label><button class="btn" type="submit">Guardar</button></form>` : ''}
+            ${!['cancelado', 'recusado'].includes(e.status) ? html`<details class="edit-box"${e.requisition ? '' : raw(' open')}><summary>${e.requisition ? 'Alterar n.º de requisição' : 'Indicar n.º de requisição'}</summary>
+              <form method="post" action="/exames/${id}/requisicao" class="toolbar inline-edit">
+              <label><span class="sr">N.º de requisição</span><input name="requisition" maxlength="40" value="${e.requisition}" class="mono" autocomplete="off" placeholder="n.º de requisição"></label><button class="btn" type="submit">Guardar</button></form></details>` : ''}
             <details class="edit-box"${needsId ? raw(' open') : ''}><summary>${needsId ? 'Identificar o doente (necessário para o relatório)' : 'Corrigir identificação do doente'}</summary>
               <form method="post" action="/pedidos/${e.request_id}/doente" class="stack">
                 <input type="hidden" name="back" value="${back}">
                 <div class="grid3">
                   <label>N.º de processo<input name="patient_process" maxlength="40" value="${e.patient_process}" class="mono" inputmode="numeric" autocomplete="off"></label>
                   <label>Nome <span class="opt">opcional</span><input name="patient_name" maxlength="120" value="${e.patient_name}" autocomplete="off"></label>
-                  <label>Nascimento <span class="opt">opcional</span><input name="birth_date" type="date" value="${e.birth_date || ''}"></label>
+                  <label>Nascimento <span class="opt">opcional</span>${dateInput('birth_date', e.birth_date || '')}</label>
                 </div>
                 <div class="grid3">
                   <label>Origem<select name="origin">${Object.entries(ORIGIN_LABEL).map(([k, l]) => html`<option value="${k}"${e.origin === k ? raw(' selected') : ''}>${l}</option>`)}</select></label>
@@ -220,6 +221,7 @@ export function slotGroups(times, availability, date, button) {
   const wd = weekday(date);
   const ws = availability.filter((w) => w.weekday === wd).sort((a, b) => a.start.localeCompare(b.start));
   const groups = ws.map((w) => ({ w, times: times.filter((t) => t >= w.start && t < w.end) })).filter((g) => g.times.length);
-  if (groups.length <= 1) return html`<div class="slot-times">${times.map(button)}</div>`;
+  // Com manhã e tarde no horário, o rótulo aparece sempre (mesmo que só um dos períodos tenha vagas).
+  if (ws.length <= 1) return html`<div class="slot-times">${times.map(button)}</div>`;
   return html`${groups.map((g) => html`<div class="slot-period"><h3>${g.w.start < '13:00' ? 'Manhã' : 'Tarde'}</h3><div class="slot-times">${g.times.map(button)}</div></div>`)}`;
 }

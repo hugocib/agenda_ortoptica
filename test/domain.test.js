@@ -218,3 +218,12 @@ test('vagas não atravessam o almoço', () => {
   const [day] = freeSlots({ fromDate: TUE, days: 1, minutes: 60, typeId: 1, ...lunchCtx });
   assert.ok(!day.times.includes('12:15') && day.times.includes('12:00') && day.times.includes('14:00'));
 });
+
+test('datas escritas em dd/mm/aaaa', async () => {
+  const { toIsoDate } = await import('../src/time.js');
+  assert.equal(toIsoDate('28/10/2026'), '2026-10-28');
+  assert.equal(toIsoDate('3/1/2027'), '2027-01-03');
+  assert.equal(toIsoDate('2026-10-28'), '2026-10-28');
+  assert.equal(toIsoDate(''), '');
+  assert.equal(toIsoDate('31/02/2026'), '31/02/2026'); // inválida: a validação recusa
+});

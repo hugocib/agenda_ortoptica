@@ -110,6 +110,7 @@ export default async function bookingRoutes(app, { db }) {
     if (monday < first) monday = first;
     if (monday > last) monday = last;
     const names = getSetting(db, 'booking_names') || [];
+    const step = getSetting(db, 'slot_step_min');
     const chosen = decodeURIComponent(readCookie(req.headers.cookie, 'quem') || '');
     const { days, ctx } = tipo ? weekSlots(db, { monday, minutes: tipo.minutes, typeId: tipo.id }) : { days: [], ctx: null };
     const reservas = examsWhere(db, `r.source = 'secretariado' AND e.starts_at >= ? AND (e.status IN ('pendente','agendado') OR e.updated_at >= ?)`,
@@ -126,7 +127,7 @@ export default async function bookingRoutes(app, { db }) {
           <section class="sec book-new" aria-labelledby="h-nova">
             <div class="sec-h"><h2 id="h-nova">Nova reserva</h2></div>
             <form method="get" action="${base}" class="toolbar">
-              <label>Exame <select name="tipo" data-autosubmit>${tipo ? '' : html`<option value="">Escolha o exame…</option>`}${types.map((t) => html`<option value="${t.id}"${tipo?.id === t.id ? raw(' selected') : ''}>${t.name} · ${t.minutes} min</option>`)}</select></label>
+              <label>Exame <select name="tipo" data-autosubmit>${tipo ? '' : html`<option value="">Escolha o exame…</option>`}${types.map((t) => html`<option value="${t.id}"${tipo?.id === t.id ? raw(' selected') : ''}>${t.name} · ${roundUp(t.minutes, step)} min</option>`)}</select></label>
               <input type="hidden" name="semana" value="${monday}">
               <button class="btn" type="submit">Ver horas livres</button>
             </form>
@@ -136,7 +137,7 @@ export default async function bookingRoutes(app, { db }) {
                   ${whoField(names, chosen)}
                   <label>N.º de requisição <span class="opt">opcional; pode pôr depois</span><input name="requisicao" maxlength="40" class="mono" autocomplete="off"></label>
                 </div>
-                <div class="book-week"><p class="sec-note">${tipo.name} ocupa <b>${roundUp(tipo.minutes, ctx?.step || 15)} min</b>. Toque numa hora para reservar.</p>
+                <div class="book-week"><p class="sec-note">Toque numa hora para reservar (${tipo.name}: <b>${roundUp(tipo.minutes, step)} min</b>).</p>
                   ${weekNav(`${base}?tipo=${tipo.id}&`, monday, first, last)}</div>
                 ${slotPicker(days, ctx?.availability || [], 'Reservar')}
               </form>` : html`<p class="empty">Escolha o tipo de exame para ver as horas livres.</p>`}

@@ -153,6 +153,17 @@
     });
   });
 
+  // Datas dd/mm/aaaa: as barras aparecem sozinhas enquanto se escreve os números.
+  document.querySelectorAll('input[data-date]').forEach(function (inp) {
+    inp.addEventListener('input', function (ev) {
+      if (ev.inputType && ev.inputType.indexOf('delete') === 0) return;
+      var d = inp.value.replace(/\D/g, '').slice(0, 8);
+      var out = d.slice(0, 2) + (d.length > 2 ? '/' + d.slice(2, 4) : '') + (d.length > 4 ? '/' + d.slice(4) : '');
+      if (d.length === 2 || d.length === 4) out += '/';
+      inp.value = out;
+    });
+  });
+
   // Ajuda «?»: só uma aberta de cada vez; fecha ao tocar fora ou com Esc.
   document.addEventListener('click', function (ev) {
     document.querySelectorAll('details.help[open]').forEach(function (d) { if (!d.contains(ev.target)) d.open = false; });

@@ -3,8 +3,8 @@ import { html, raw } from '../html.js';
 import { audit } from '../db.js';
 import { createRequest, examsWhere, getRequest, listExamTypes, transitionExam, updatePatient } from '../repo.js';
 import { ORIGIN_LABEL } from '../domain/status.js';
-import { fmtDate, fmtDateTime, fmtUtcLocal, isDate, todayLocal } from '../time.js';
-import { emptyState, examLine, flash, originTag, pageHead, patientLabel, postButton, track, when } from '../ui.js';
+import { fmtDate, fmtDateTime, fmtUtcLocal, isDate, toIsoDate, todayLocal } from '../time.js';
+import { dateInput, emptyState, examLine, flash, originTag, pageHead, patientLabel, postButton, track, when } from '../ui.js';
 import { arr, idParam, safeBack, send, str } from './util.js';
 
 const RequestSchema = z.object({
@@ -41,7 +41,7 @@ function newForm(req, types, values = {}, errors = {}) {
           <div class="grid3">
             <label>N.º de processo (Siima) *<input name="patient_process" required maxlength="40" value="${v.patient_process || ''}" autofocus inputmode="numeric" autocomplete="off" class="mono"${inv('patient_process')}>${err('patient_process')}</label>
             <label>Nome <span class="opt">opcional</span><input name="patient_name" maxlength="120" value="${v.patient_name || ''}" autocomplete="off"${inv('patient_name')}>${err('patient_name')}</label>
-            <label>Data de nascimento <span class="opt">opcional</span><input name="birth_date" type="date" value="${v.birth_date || ''}"${inv('birth_date')}>${err('birth_date')}</label>
+            <label>Data de nascimento <span class="opt">opcional</span>${dateInput('birth_date', v.birth_date || '', { invalid: Boolean(errors.birth_date) })}${err('birth_date')}</label>
           </div>
         </fieldset>
         <fieldset class="span2">
@@ -89,7 +89,7 @@ export default async function requestRoutes(app, { db }) {
         ${flash(req.query, req)}
         <div class="toolbar">
           <nav class="tabs" aria-label="Filtro"><a href="/pedidos?f=por_agendar" class="${!q && filtro === 'por_agendar' ? 'active' : ''}"${!q && filtro === 'por_agendar' ? raw(' aria-current="page"') : ''}>Por agendar</a><a href="/pedidos?f=todos" class="${!q && filtro === 'todos' ? 'active' : ''}"${!q && filtro === 'todos' ? raw(' aria-current="page"') : ''}>Todos <span class="muted small">últimos 200</span></a></nav>
-          <form method="get" action="/pedidos" class="search" role="search"><input type="search" name="q" value="${q}" placeholder="Requisição, processo, nome ou projeto" aria-label="Pesquisar exames"><button class="btn" type="submit">Pesquisar</button></form>
+          <form method="get" action="/pedidos" class="search" role="search"><input type="search" name="q" value="${q}" placeholder="Requisição, processo ou nome" aria-label="Pesquisar por requisição, processo, nome ou projeto"><button class="btn" type="submit">Pesquisar</button></form>
         </div>
         ${q ? html`<p class="sec-note">${rows.length} ${rows.length === 1 ? 'resultado' : 'resultados'} para «${q}» · <a href="/pedidos">limpar pesquisa</a></p>` : ''}
         ${rows.length ? html`<table class="table rt">
@@ -111,6 +111,7 @@ export default async function requestRoutes(app, { db }) {
   app.post('/pedidos', async (req, reply) => {
     const body = req.body || {};
     const values = Object.fromEntries(['patient_process', 'patient_name', 'birth_date', 'origin', 'project', 'referrer', 'priority', 'notes', 'requisition'].map((k) => [k, str(body[k])]));
+    values.birth_date = toIsoDate(values.birth_date);
     values.exam_type_id = arr(body.exam_type_id);
     const parsed = RequestSchema.safeParse(values);
     const errors = {};
@@ -178,7 +179,7 @@ export default async function requestRoutes(app, { db }) {
     const r = id && getRequest(db, id);
     if (!r) return reply.callNotFound();
     const back = safeBack(req.body?.back, `/pedidos/${id}`);
-    const parsed = PatientSchema.safeParse(Object.fromEntries(['patient_process', 'patient_name', 'birth_date', 'origin', 'project'].map((k) => [k, str(req.body?.[k])])));
+    const parsed = PatientSchema.safeParse(Object.fromEntries(['patient_process', 'patient_name', 'birth_date', 'origin', 'project'].map((k) => [k, k === 'birth_date' ? toIsoDate(str(req.body?.[k])) : str(req.body?.[k])])));
     // Um pedido direto tem sempre de manter o n.º de processo.
     if (!parsed.success || (r.source === 'direto' && !parsed.data.patient_process)) return reply.redirect(`${back.split('?')[0]}?err=dados_invalidos`);
     updatePatient(db, req.user, id, { ...parsed.data, birth_date: parsed.data.birth_date || null });

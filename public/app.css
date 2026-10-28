@@ -870,3 +870,34 @@ td.acts-col .btn + .btn { margin-left: 0.25rem; }
   .band label { flex: 0 0 auto; }
   .band input.lim { width: 4.8rem; }
 }
+
+/* ---------- Revisão de interface (v1.4.2) ---------- */
+/* «?»: centrado na linha do título, não na linha de base do texto. */
+.sec-h .help, .theme-h .help, .fs-head .help { align-self: center; }
+h1 .help, h2 .help { vertical-align: text-top; margin-top: 0.12em; }
+label .help { vertical-align: middle; }
+.sec-note .help { vertical-align: -0.3em; }
+.sec-note.sec-note { margin-bottom: 0.75rem; }
+/* Respirar entre uma folha (formulário) e a secção seguinte, e entre um título e a folha. */
+.sheet + .sec, form.sheet + .sec, .sheet + section, .inbox + .work { margin-top: 2.25rem; }
+.sec-h + .sheet, .sec-h + form.sheet, .sec-h + .stack.sheet { margin-top: 0.85rem; }
+.page-title .sub .sub-when { font-weight: 600; color: var(--ink); }
+.date-in { max-width: 10rem; font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.edit-box summary { font-size: 0.95rem; }
+.edit-box .inline-edit { margin-top: 0; }
+@media (max-width: 760px) {
+  /* Opções curtas (claro/escuro, origem) ficam lado a lado e só passam à linha se não couberem. */
+  .seg { flex-direction: row; flex-wrap: wrap; }
+  .seg label { flex: 1 1 auto; justify-content: center; border-bottom: 0; border-right: 1px solid var(--rule); }
+  .seg label:last-child { border-right: 0; }
+  /* Relatório: o nome do parâmetro numa linha própria, OD e OE lado a lado por baixo. */
+  .entry thead tr, .entry tbody tr { display: grid; grid-template-columns: 1fr 1fr 2.8rem; align-items: center; column-gap: 0.4rem; }
+  .entry thead th:first-child, .entry thead th.norm, .entry thead th:nth-child(4) { display: none; }
+  .entry tbody th { grid-column: 1 / -1; padding: 0.55rem 0 0.1rem; }
+  .entry tbody td { padding: 0.15rem 0 0.4rem; }
+  .entry tbody td[colspan] { grid-column: 1 / 3; }
+  .entry .cell { width: 100%; }
+  .entry input.num { width: 100%; max-width: none; flex: 1; }
+  .entry tbody tr:nth-child(even) th, .entry tbody tr:nth-child(even) td { background: transparent; }
+  .entry tbody tr + tr { border-top: 1px solid var(--rule-soft); }
+}
