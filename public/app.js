@@ -127,7 +127,7 @@
 
   // Aviso ao sair de um formulário com alterações por guardar (relatório, pedido).
   var dirty = false;
-  document.querySelectorAll('form.report-form, form.form-grid, form.acts-form, form[action="/admin/horario"]').forEach(function (f) {
+  document.querySelectorAll('form.report-form, form.form-grid, form.acts-form, form.ficha, form[action="/admin/horario"]').forEach(function (f) {
     f.addEventListener('input', function () { dirty = true; });
     f.addEventListener('submit', function () { dirty = false; });
   });
@@ -209,6 +209,25 @@
     document.querySelectorAll('tr[data-day] select').forEach(function (s) { s.addEventListener('change', redraw); });
     if (fill) fill.addEventListener('click', redraw);
   }
+
+  // Ficha: mostra as opções (escolha) ou os normativos (número) conforme o tipo do parâmetro.
+  document.querySelectorAll('select[data-type]').forEach(function (sel) {
+    sel.addEventListener('change', function () { var tb = sel.closest('tbody.fp'); if (tb) tb.setAttribute('data-kind', sel.value); });
+  });
+  // Ficha: inserir um marcador {campo} na frase de técnica, onde está o cursor.
+  var sentence = document.querySelector('textarea[data-sentence]');
+  document.querySelectorAll('[data-insert]').forEach(function (chip) {
+    chip.addEventListener('click', function () {
+      if (!sentence) return;
+      var t = chip.getAttribute('data-insert');
+      var a = sentence.selectionStart || sentence.value.length;
+      var b = sentence.selectionEnd || a;
+      sentence.value = sentence.value.slice(0, a) + t + sentence.value.slice(b);
+      sentence.focus();
+      sentence.selectionStart = sentence.selectionEnd = a + t.length;
+      dirty = true;
+    });
+  });
 
   // Atos: os quadrados de «Ocupa» acompanham a duração escolhida.
   document.querySelectorAll('select[data-duration]').forEach(function (sel) {

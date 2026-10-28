@@ -12,7 +12,7 @@ export function listExamTypes(db, { activeOnly = true } = {}) {
   return db.prepare(`SELECT * FROM exam_types ${activeOnly ? 'WHERE active = 1' : ''} ORDER BY sort, name`).all();
 }
 
-const EXAM_SELECT = `SELECT e.*, t.name AS type_name, t.code AS type_code, t.report_template,
+const EXAM_SELECT = `SELECT e.*, t.name AS type_name, t.code AS type_code, t.report_template, t.form AS type_form,
   r.source, r.booked_by_name, r.patient_process, r.patient_name, r.birth_date, r.origin, r.project, r.referrer, r.priority, r.notes,
   rp.status AS report_status
   FROM exams e

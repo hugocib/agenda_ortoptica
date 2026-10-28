@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { checkSlot, freeSlots, capacityMinutes } from '../src/domain/slots.js';
 import { canTransition } from '../src/domain/status.js';
-import { evaluate, parseReportForm, renderReport, suggestConclusion, getTemplate } from '../src/domain/reports.js';
+import { evaluate, formFromTemplate, normFor, parseReportForm, renderReport, suggestConclusion, techniqueSentence, unknownMarkers } from '../src/domain/reports.js';
 import { addMinutes, localToUtc, mondayOf, ageAt } from '../src/time.js';
 import { buildIcs } from '../src/ics.js';
 
@@ -76,7 +76,7 @@ test('datas: hora de Lisboa para UTC, incluindo mudança de hora', () => {
 });
 
 test('relatório: aceita vírgula decimal e assinala valores inválidos', () => {
-  const tpl = getTemplate('erg');
+  const tpl = formFromTemplate('erg');
   const { data, errors } = parseReportForm(tpl, {
     'f.da3_b_amp.OD': '412,5', 'f.da3_b_amp.OE': '398', 'f.flk_amp.OD': 'abc', 'f.eletrodos': 'DTL', 'f.cooperacao': 'inventada',
   });
@@ -87,19 +87,44 @@ test('relatório: aceita vírgula decimal e assinala valores inválidos', () => 
   assert.equal(data.eletrodos, 'DTL');
 });
 
-test('relatório: normativos do laboratório e sugestão de conclusão', () => {
-  const norms = { 'erg.da3_b_amp': { min: 350, max: null } };
+test('relatório: normativos da ficha (convertidos dos antigos) e sugestão de conclusão', () => {
+  const form = formFromTemplate('erg', { 'erg.da3_b_amp': { min: 350, max: null } });
   const data = { da3_b_amp: { OD: 412, OE: 300 } };
-  const { findings } = evaluate('erg', data, norms);
+  const { findings } = evaluate(form, data, 40);
   assert.equal(findings.length, 1);
   assert.equal(findings[0].eye, 'OE');
-  assert.match(suggestConclusion('erg', data, norms), /abaixo do normativo/);
-  assert.equal(suggestConclusion('erg', data, {}), ''); // sem normativos, sem sugestão
+  assert.match(suggestConclusion(form, data, 40), /abaixo do normativo/);
+  assert.equal(suggestConclusion(formFromTemplate('erg'), data, 40), ''); // sem normativos, sem sugestão
+});
+
+test('normativos por idade: aplica o intervalo da idade; sem idade, só o intervalo geral', () => {
+  const f = { type: 'number', norms: [
+    { ageMin: null, ageMax: 18, min: 200, max: null },
+    { ageMin: 18, ageMax: 60, min: 300, max: 600 },
+    { ageMin: 60, ageMax: null, min: 250, max: null },
+  ] };
+  assert.equal(normFor(f, 10).min, 200);
+  assert.equal(normFor(f, 18).min, 300); // «de» incluída
+  assert.equal(normFor(f, 59).max, 600);
+  assert.equal(normFor(f, 60).min, 250);
+  assert.equal(normFor(f, null), null); // sem data de nascimento não se adivinha
+  assert.equal(normFor({ type: 'number', norms: [...f.norms, { ageMin: null, ageMax: null, min: 1, max: 2 }] }, null).min, 1);
+  const form = { title: 'X', technique: { text: '', fields: [] }, sections: [{ title: 'S', fields: [{ key: 'a', label: 'A', unit: '', type: 'number', eyes: false, options: [], norms: f.norms }] }] };
+  assert.equal(evaluate(form, { a: 280 }, 10).findings.length, 0);
+  assert.equal(evaluate(form, { a: 280 }, 30).findings.length, 1);
+});
+
+test('frase de técnica com marcadores e partes opcionais', () => {
+  const t = 'Exame[ com elétrodos {el}][ e {min} min de adaptação]. [Colaboração {coop}.]';
+  assert.equal(techniqueSentence(t, { el: 'DTL', min: 20, coop: 'boa' }), 'Exame com elétrodos DTL e 20 min de adaptação. Colaboração boa.');
+  assert.equal(techniqueSentence(t, { el: 'DTL' }), 'Exame com elétrodos DTL.');
+  assert.equal(techniqueSentence('Valor {x}.', { x: 12.5 }), 'Valor 12,5.');
+  assert.deepEqual(unknownMarkers('Usa {el} e {nada}', { technique: { fields: [{ key: 'el' }] }, sections: [] }), ['nada']);
 });
 
 test('relatório: escapa HTML em todos os campos', () => {
   const out = String(renderReport({
-    templateKey: 'oct',
+    form: formFromTemplate('oct'),
     data: { obs: { OD: '<img src=x onerror=alert(1)>' } },
     conclusion: '<script>alert(1)</script>',
     exam: { id: 1, starts_at: '2027-03-02T09:00' },

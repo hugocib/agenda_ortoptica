@@ -5,7 +5,8 @@ import { html, raw } from '../html.js';
 import { audit, getSetting, setSetting } from '../db.js';
 import { destroyUserSessions, generatePassword, hashPassword } from '../auth.js';
 import { isBackupName, listBackups, runBackup } from '../backup.js';
-import { fmtNum, getTemplate, numericFields, parseNumber, TEMPLATE_KEYS, TEMPLATES } from '../domain/reports.js';
+import { formFromTemplate, numericFields, parseForm } from '../domain/reports.js';
+import fichaRoutes from './ficha.js';
 import { isTime, toMin } from '../time.js';
 import { flash, help, icon, pageHead, timeSelect } from '../ui.js';
 import { forbid, idParam, isOrtho, send, str } from './util.js';
@@ -14,7 +15,7 @@ const WEEKDAYS = [[1, 'Segunda'], [2, 'Terça'], [3, 'Quarta'], [4, 'Quinta'], [
 
 function tabs(active) {
   const t = (href, label, key) => html`<a href="${href}" class="${active === key ? 'active' : ''}">${label}</a>`;
-  return html`<nav class="tabs">${t('/admin', 'Horário', 'geral')}${t('/admin/exames', 'Atos / MCDTs', 'exames')}${t('/admin/reservas', 'Reservas', 'reservas')}${t('/admin/normativos', 'Normativos', 'norms')}${t('/admin/utilizadores', 'Utilizadores', 'users')}${t('/admin/sistema', 'Sistema', 'sistema')}</nav>`;
+  return html`<nav class="tabs">${t('/admin', 'Horário', 'geral')}${t('/admin/exames', 'Atos / MCDTs', 'exames')}${t('/admin/reservas', 'Reservas', 'reservas')}${t('/admin/utilizadores', 'Utilizadores', 'users')}${t('/admin/sistema', 'Sistema', 'sistema')}</nav>`;
 }
 
 /** Janelas de um dia em manhã (começa antes das 13:00) e tarde (a seguinte). */
@@ -40,6 +41,14 @@ function weekPreview(availability) {
   const total = availability.reduce((a, w) => a + toMin(w.end) - toMin(w.start), 0);
   return html`<figure class="week-preview" data-h0="${H0}" data-h1="${H1}" data-w="${W}" data-left="${LEFT}" data-row="${ROW}"><svg viewBox="0 0 ${W + 14} ${30 + WEEKDAYS.length * ROW}" role="img" aria-label="Semana: ${Math.round(total / 60)} horas de exames">${raw(grid + rows)}</svg>
     <figcaption data-total>${Math.round((total / 60) * 10) / 10} h de exames por semana${availability.length ? '' : ' · sem horário definido'}</figcaption></figure>`;
+}
+
+/** Resumo da ficha na tabela de atos, com ligação ao editor. */
+function fichaCell(t) {
+  const form = parseForm(t.form);
+  const params = form.sections.reduce((a, sec) => a + sec.fields.length, 0);
+  const withNorms = numericFields(form).filter((f) => f.norms.some((n) => n.min != null || n.max != null)).length;
+  return html`<a class="ficha-link" href="/admin/exames/${t.id}/ficha">Ficha<small>${params} ${params === 1 ? 'parâmetro' : 'parâmetros'}${withNorms ? ` · ${withNorms} com normativo` : ''}</small></a>`;
 }
 
 const fmtMin = (m) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${String(m % 60).padStart(2, '0')}` : ''}`);
@@ -241,13 +250,13 @@ export default async function adminRoutes(app, { db, config }) {
         <section class="sec"><div class="sec-h"><h2>Atos / MCDTs</h2>${help(html`<p><b>Duração</b>: tempo total do ato, com preparação. É o que cada reserva ocupa na agenda. Cada quadrado = ${step} min da grelha.</p><p><b>Máx./dia</b>: limite de exames desse ato no mesmo dia (p. ex. eletrofisiologia). «—» = sem limite.</p><p>Mudar a duração não altera exames já marcados. Para deixar de usar um ato, desmarque «Ativo» em vez de o apagar.</p>`)}</div>
           <form method="post" action="/admin/exames" class="acts-form">
             <table class="acts">
-              <thead><tr><th scope="col">Ato</th><th scope="col">Duração</th><th scope="col" class="hide-m">Ocupa</th><th scope="col">Máx./dia</th><th scope="col">Relatório</th><th scope="col">Ativo</th></tr></thead>
+              <thead><tr><th scope="col">Ato</th><th scope="col">Duração</th><th scope="col" class="hide-m">Ocupa</th><th scope="col">Máx./dia</th><th scope="col">Ficha do relatório</th><th scope="col">Ativo</th></tr></thead>
               <tbody>${types.map((t) => html`<tr class="${t.active ? '' : 'inactive'}">
                 <td><input name="name.${t.id}" value="${t.name}" required maxlength="120" aria-label="Nome"></td>
                 <td>${durSelect(`minutes.${t.id}`, t.minutes, `Duração de ${t.name}`)}</td>
                 <td class="hide-m">${blocks(t.minutes)}</td>
                 <td><select name="max.${t.id}" class="max-sel" aria-label="Máximo por dia de ${t.name}"><option value="">—</option>${Array.from({ length: 10 }, (_, i) => i + 1).map((n) => html`<option${t.max_per_day === n ? raw(' selected') : ''}>${n}</option>`)}</select></td>
-                <td><select name="tpl.${t.id}" aria-label="Modelo de relatório de ${t.name}">${TEMPLATE_KEYS.map((k) => html`<option value="${k}"${t.report_template === k ? raw(' selected') : ''}>${TEMPLATES[k].title}</option>`)}</select></td>
+                <td>${fichaCell(t)}</td>
                 <td class="center"><input type="checkbox" name="active.${t.id}" value="1"${t.active ? raw(' checked') : ''} aria-label="${t.name} ativo"></td>
               </tr>`)}</tbody>
             </table>
@@ -258,7 +267,8 @@ export default async function adminRoutes(app, { db, config }) {
           <form method="post" action="/admin/exames/novo" class="toolbar">
             <label>Nome<input name="name" required maxlength="120" placeholder="p. ex. Campo visual"></label>
             <label>Duração ${durSelect('minutes', 30, 'Duração')}</label>
-            <button class="btn" type="submit">Adicionar</button>
+            <label>Ficha <select name="from"><option value="">em branco</option>${types.map((t) => html`<option value="${t.id}">cópia de ${t.name}</option>`)}</select></label>
+            <button class="btn" type="submit">Adicionar e abrir a ficha</button>
           </form>
         </section>`,
     });
@@ -274,14 +284,13 @@ export default async function adminRoutes(app, { db, config }) {
       const minutes = Number.parseInt(str(b[`minutes.${t.id}`]), 10);
       const maxRaw = str(b[`max.${t.id}`]);
       const max = maxRaw === '' ? null : Number.parseInt(maxRaw, 10);
-      const tpl = str(b[`tpl.${t.id}`]);
-      if (name.length < 2 || !(minutes >= 5 && minutes <= 480) || (max !== null && !(max >= 1 && max <= 20)) || !TEMPLATE_KEYS.includes(tpl)) {
+      if (name.length < 2 || !(minutes >= 5 && minutes <= 480) || (max !== null && !(max >= 1 && max <= 20))) {
         return reply.redirect('/admin/exames?err=dados_invalidos');
       }
-      rows.push({ id: t.id, name, minutes, max, tpl, active: str(b[`active.${t.id}`]) === '1' ? 1 : 0 });
+      rows.push({ id: t.id, name, minutes, max, active: str(b[`active.${t.id}`]) === '1' ? 1 : 0 });
     }
     db.transaction(() => {
-      const up = db.prepare('UPDATE exam_types SET name = @name, minutes = @minutes, max_per_day = @max, report_template = @tpl, active = @active WHERE id = @id');
+      const up = db.prepare('UPDATE exam_types SET name = @name, minutes = @minutes, max_per_day = @max, active = @active WHERE id = @id');
       for (const r of rows) up.run(r);
       audit(db, req.user.id, 'alterar', 'tipo_exame', null, { n: rows.length });
     })();
@@ -293,10 +302,13 @@ export default async function adminRoutes(app, { db, config }) {
     const minutes = Number.parseInt(str(req.body?.minutes), 10);
     if (name.length < 2 || !(minutes >= 5 && minutes <= 480)) return reply.redirect('/admin/exames?err=dados_invalidos');
     const sort = db.prepare('SELECT COALESCE(MAX(sort), 0) + 1 FROM exam_types').pluck().get();
-    const info = db.prepare(`INSERT INTO exam_types (code, name, minutes, is_electro, report_template, active, sort)
-      VALUES (?, ?, ?, 0, 'generico', 1, ?)`).run(`t${crypto.randomBytes(4).toString('hex')}`, name, minutes, sort);
-    audit(db, req.user.id, 'criar', 'tipo_exame', Number(info.lastInsertRowid));
-    return reply.redirect('/admin/exames?msg=guardado');
+    const src = db.prepare('SELECT form FROM exam_types WHERE id = ?').get(Number(str(req.body?.from)) || 0);
+    const form = src ? parseForm(src.form) : { ...formFromTemplate('generico'), title: name };
+    const info = db.prepare(`INSERT INTO exam_types (code, name, minutes, is_electro, report_template, active, sort, form)
+      VALUES (?, ?, ?, 0, 'generico', 1, ?, ?)`).run(`t${crypto.randomBytes(4).toString('hex')}`, name, minutes, sort, JSON.stringify(form));
+    const id = Number(info.lastInsertRowid);
+    audit(db, req.user.id, 'criar', 'tipo_exame', id);
+    return reply.redirect(`/admin/exames/${id}/ficha?msg=guardado`);
   });
 
   // ---------- Utilizadores ----------
@@ -370,50 +382,9 @@ export default async function adminRoutes(app, { db, config }) {
     return reply.redirect('/admin/utilizadores?msg=guardado');
   });
 
-  // ---------- Normativos ----------
-  app.get('/admin/normativos', async (req, reply) => {
-    const key = TEMPLATE_KEYS.includes(str(req.query.modelo)) ? str(req.query.modelo) : 'erg';
-    const tpl = getTemplate(key);
-    const norms = getSetting(db, 'norms');
-    const fields = numericFields(tpl);
-    return send(reply, req, {
-      title: 'Normativos',
-      active: 'admin',
-      body: html`${pageHead('Administração')}${tabs('norms')}${flash(req.query, req)}
-        <section class="sec">
-          <p>Limites normativos <strong>do laboratório</strong> (segundo a ISCEV, cada laboratório deve estabelecer os seus, por equipamento e protocolo). Deixe vazio o que não tiver validado: esse valor aparece no relatório sem classificação.</p>
-          <form method="get" action="/admin/normativos" class="toolbar"><label>Modelo <select name="modelo">${TEMPLATE_KEYS.filter((k) => numericFields(getTemplate(k)).length).map((k) => html`<option value="${k}"${k === key ? html` selected` : ''}>${TEMPLATES[k].title}</option>`)}</select></label><button class="btn" type="submit">Abrir</button></form>
-          ${fields.length ? html`<form method="post" action="/admin/normativos" class="stack">
-            <input type="hidden" name="modelo" value="${key}">
-            <table class="table compact-table"><thead><tr><th>Secção</th><th>Parâmetro</th><th>Mínimo</th><th>Máximo</th><th>Unidade</th></tr></thead><tbody>
-            ${fields.map((f) => { const n = norms[`${key}.${f.key}`] || {}; return html`<tr><td class="muted">${f.section}</td><td>${f.label}</td>
-              <td><input name="min.${f.key}" inputmode="decimal" class="num" value="${n.min != null ? fmtNum(n.min) : ''}"></td>
-              <td><input name="max.${f.key}" inputmode="decimal" class="num" value="${n.max != null ? fmtNum(n.max) : ''}"></td><td>${f.unit}</td></tr>`; })}
-            </tbody></table>
-            <div><button class="btn primary" type="submit">Guardar normativos</button></div>
-          </form>` : html`<p class="empty-state">Este modelo não tem campos numéricos.</p>`}
-          <p class="muted small">Os normativos aplicam-se aos relatórios ainda não validados. Relatórios validados não mudam.</p>
-        </section>`,
-    });
-  });
+  // Os normativos passaram para a ficha de cada ato.
+  app.get('/admin/normativos', async (req, reply) => reply.redirect('/admin/exames'));
 
-  app.post('/admin/normativos', async (req, reply) => {
-    const b = req.body || {};
-    const key = str(b.modelo);
-    if (!TEMPLATE_KEYS.includes(key)) return reply.redirect('/admin/normativos');
-    const norms = { ...getSetting(db, 'norms') };
-    for (const f of numericFields(getTemplate(key))) {
-      const mn = parseNumber(str(b[`min.${f.key}`]));
-      const mx = parseNumber(str(b[`max.${f.key}`]));
-      if (mn.error || mx.error) return reply.redirect(`/admin/normativos?modelo=${key}&err=dados_invalidos`);
-      const entry = { min: mn.empty ? null : mn.value, max: mx.empty ? null : mx.value };
-      if (entry.min != null && entry.max != null && entry.min > entry.max) return reply.redirect(`/admin/normativos?modelo=${key}&err=dados_invalidos`);
-      if (entry.min == null && entry.max == null) delete norms[`${key}.${f.key}`];
-      else norms[`${key}.${f.key}`] = entry;
-    }
-    setSetting(db, 'norms', norms);
-    audit(db, req.user.id, 'alterar_normativos', 'definicoes', null, { modelo: key });
-    return reply.redirect(`/admin/normativos?modelo=${key}&msg=guardado`);
-  });
+  await app.register(fichaRoutes, { db });
 }
 

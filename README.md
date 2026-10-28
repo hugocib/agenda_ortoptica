@@ -60,7 +60,10 @@ Com HTTPS (Nginx Proxy Manager com certificado), a app instala-se como app, os b
 1. **Administração → Horário:** uma linha por dia, com manhã e tarde (horas em 24 h; «—» = sem exames nesse período). O intervalo entre a manhã e a tarde é o almoço e nunca tem vagas. «Copiar segunda para os outros dias úteis» preenche a semana de uma vez, e a pré-visualização mostra a semana enquanto escolhe. Aqui também se define a grelha (15 min) e quantas semanas de vagas se mostram.
 2. **Administração → Atos / MCDTs:** a duração de cada ato (com preparação), que é o tempo que cada reserva ocupa (os quadrados mostram quantos blocos da grelha), e o máximo por dia, se houver (p. ex. 2 ERG por dia). Tudo numa tabela, com um só «Guardar».
 3. **Administração → Reservas:** copie o link e envie-o ao secretariado. Ponha os nomes de quem reserva (um por linha) para aparecerem numa lista. Se o link for parar a quem não deve, «Gerar link novo» desativa o anterior.
-4. **Administração → Normativos:** introduza só os limites que o laboratório validou. Sem normativo, o valor aparece sem classificação.
+4. **Administração → Atos / MCDTs → Ficha:** cada ato tem a sua ficha de relatório: secções, parâmetros (número, texto ou escolha; por olho ou único, com unidade), a frase de técnica e os **normativos** de cada parâmetro numérico. Os normativos podem ter vários intervalos por idade («dos 18 aos 60 anos: mín. 240, máx. 520»); aplica-se o da idade do doente no dia do exame. Introduza só os limites que o laboratório validou: sem normativo, o valor aparece sem classificação.
+   - **Ato novo:** em «Novo ato», escolha começar em branco ou com uma cópia da ficha de outro ato; a ficha abre logo a seguir.
+   - **Frase de técnica:** `{chave}` é substituído pelo valor do campo e o que está entre `[ ]` só aparece se os campos lá dentro estiverem preenchidos. Ex.: `Exame realizado segundo o padrão ISCEV[, com elétrodos {eletrodos}].` A ficha mostra um exemplo da frase enquanto a escreve.
+   - Relatórios já validados nunca mudam. Os rascunhos passam a usar a ficha nova (a app avisa antes de apagar um parâmetro que tenha valores em rascunhos).
 5. **A minha conta → Aspeto:** escolha um dos 12 temas (cor, letra e forma) e o modo claro/escuro de cada dispositivo.
 6. **Administração → Sistema → Calendário (ICS):** pode subscrever o endereço no Outlook para ver os exames no seu calendário (as reservas por confirmar aparecem como «[por confirmar]»). O calendário não mostra dados de doentes.
 
@@ -128,7 +131,7 @@ Desenvolvimento sem Docker: `npm install`, `npm test`, `npm run dev` (abre em `h
 | Vírgula decimal rejeitada | Aceita `12,5` e `12.5` |
 | Mudar a duração de um tipo altera exames já marcados | A duração fica registada em cada exame no momento da reserva |
 | Relatório assinado muda depois | Ao validar, guarda-se uma cópia fixa; reabrir cria histórico |
-| Normativos inventados | A app não traz normativos: cada laboratório introduz os seus |
+| Normativos inventados | A app não traz normativos: cada laboratório introduz os seus, por ato e, se quiser, por idade. Sem data de nascimento, não se adivinha a idade: só vale um normativo sem idades |
 | Service worker que mostra dados antigos ou os deixa no disco | Só ficheiros estáticos em cache; páginas com dados nunca ficam em cache (`no-store`); sem rede, aparece uma página a avisar |
 | PWA que não instala na rede local | Instala quando servida por HTTPS (reverse proxy); sem HTTPS funciona como site normal |
 | SQLite em pasta sem permissões ou partilhada | Pasta local do servidor (uid 1000), verificada no arranque; nunca numa pasta de rede/SMB |
@@ -158,6 +161,6 @@ Desenvolvimento sem Docker: `npm install`, `npm test`, `npm run dev` (abre em `h
 - Não há integração automática com o Siima: a app lembra e regista que foi feito, mas a marcação e a execução continuam a ser feitas lá.
 - O link de reservas é partilhado (não identifica cada pessoa): quem reservou é o nome escolhido na lista. Se precisar de saber com certeza quem fez cada reserva, terá de haver contas individuais.
 - A assinatura é manual (imprimir) ou com o Cartão de Cidadão / Chave Móvel Digital no PDF guardado. A app não assina digitalmente.
-- Os normativos não variam com a idade. Para normativos por idade, é preciso acrescentá-los numa versão futura.
+- Os normativos variam com a idade, mas não com o sexo nem com outros fatores.
 - As notificações push precisam de HTTPS e de ser ativadas em cada dispositivo; não há notificações por e-mail.
 - **Atualização para a v1.2:** os códigos SAP e os preços dos tipos de exame são apagados da base de dados (o `atualizar.sh` faz uma cópia de segurança antes). As contas de secretariado que existissem deixam de entrar: passam a usar o link.

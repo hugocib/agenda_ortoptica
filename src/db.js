@@ -3,6 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
+import { formFromTemplate } from './domain/reports.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = path.join(here, 'migrations');
@@ -16,6 +17,7 @@ export function openDb(file) {
   db.pragma('synchronous = NORMAL');
   migrate(db);
   seed(db);
+  fillForms(db);
   return db;
 }
 
@@ -80,7 +82,6 @@ export const DEFAULT_SETTINGS = {
   report_signer: 'Ortoptista',
   report_signer_id: 'Cédula profissional n.º ______',
   report_medical_line: true,
-  norms: {},
   theme: 'laboratorio',
   // Nomes de quem reserva pelo link do secretariado (lista curta, escolhida ao reservar).
   booking_names: [],
@@ -98,6 +99,22 @@ export function seed(db) {
   for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) insSetting.run(k, JSON.stringify(v));
   insSetting.run('ics_token', JSON.stringify(crypto.randomBytes(24).toString('base64url')));
   insSetting.run('booking_token', JSON.stringify(crypto.randomBytes(18).toString('base64url')));
+}
+
+/**
+ * Atos sem ficha recebem uma cópia do modelo que usavam, com os normativos antigos (que estavam
+ * por modelo, em «norms»). Depois da conversão, os normativos vivem só na ficha de cada ato.
+ */
+export function fillForms(db) {
+  const missing = db.prepare('SELECT id, report_template FROM exam_types WHERE form IS NULL').all();
+  if (!missing.length) return;
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'norms'").get();
+  const oldNorms = row ? JSON.parse(row.value) : {};
+  const up = db.prepare('UPDATE exam_types SET form = ? WHERE id = ?');
+  db.transaction(() => {
+    for (const t of missing) up.run(JSON.stringify(formFromTemplate(t.report_template, oldNorms)), t.id);
+    db.prepare("DELETE FROM settings WHERE key = 'norms'").run();
+  })();
 }
 
 export function getSetting(db, key) {

@@ -132,10 +132,12 @@ test('fora do circuito: pedido → agendar → marcado no Siima → realizado �
   assert.match(rep.final_html, /412,5/);
   assert.match(rep.final_html, /Hugo/);
 
-  // Mudar normativos depois não altera o relatório validado
+  // Mudar a ficha (normativos) depois não altera o relatório validado
   const before = rep.final_html;
-  await post(app, '/admin/normativos', hugo, { modelo: 'erg', 'min.da3_b_amp': '500' });
-  assert.deepEqual(getSetting(db, 'norms')['erg.da3_b_amp'], { min: 500, max: null });
+  const ergId = db.prepare("SELECT id FROM exam_types WHERE code = 'erg'").pluck().get();
+  const form = JSON.parse(db.prepare('SELECT form FROM exam_types WHERE id = ?').pluck().get(ergId));
+  form.sections[1].fields[2].norms = [{ ageMin: null, ageMax: null, min: 500, max: null }];
+  db.prepare('UPDATE exam_types SET form = ? WHERE id = ?').run(JSON.stringify(form), ergId);
   assert.equal(db.prepare('SELECT final_html FROM reports WHERE exam_id = ?').pluck().get(examId), before);
 
   // Reabrir guarda histórico
@@ -218,7 +220,7 @@ test('todas as páginas principais abrem sem erro', async () => {
   const { app } = await makeApp();
   const cookie = await login(app, 'hugo');
   for (const url of ['/hoje', '/agenda', '/pedidos', '/pedidos?f=todos', '/pedidos/novo', '/bloqueios', '/estatistica', '/admin', '/admin/exames',
-    '/admin/utilizadores', '/admin/normativos', '/admin/reservas', '/admin/sistema', '/conta', '/aparencia', '/offline', '/manifest.webmanifest', '/temas.css']) {
+    '/admin/utilizadores', '/admin/exames/1/ficha', '/admin/reservas', '/admin/sistema', '/conta', '/aparencia', '/offline', '/manifest.webmanifest', '/temas.css']) {
     const r = await get(app, url, cookie);
     assert.equal(r.statusCode, 200, url);
   }

@@ -1,8 +1,8 @@
 import { html, raw } from '../html.js';
 import { audit, getSetting } from '../db.js';
 import { getExam } from '../repo.js';
-import { fmtNum, getTemplate, parseReportForm, renderReport, suggestConclusion } from '../domain/reports.js';
-import { fmtDate } from '../time.js';
+import { ageText, fmtNum, normFor, normText, parseReportForm, renderReport, suggestConclusion, usableForm } from '../domain/reports.js';
+import { ageAt, fmtDate } from '../time.js';
 import { flash, icon, pageHead, patientLabel } from '../ui.js';
 import { forbid, idParam, isOrtho, send, str } from './util.js';
 
@@ -12,18 +12,11 @@ function reportSettings(db) {
     report_signer: getSetting(db, 'report_signer'),
     report_signer_id: getSetting(db, 'report_signer_id'),
     report_medical_line: getSetting(db, 'report_medical_line'),
-    norms: getSetting(db, 'norms'),
   };
 }
 
 function loadReport(db, examId) {
   return db.prepare('SELECT * FROM reports WHERE exam_id = ?').get(examId);
-}
-
-function normText(norm) {
-  if (!norm || (norm.min == null && norm.max == null)) return '';
-  if (norm.min != null && norm.max != null) return `${fmtNum(norm.min)}–${fmtNum(norm.max)}`;
-  return norm.min != null ? `≥ ${fmtNum(norm.min)}` : `≤ ${fmtNum(norm.max)}`;
 }
 
 function input(f, name, value, error, norm = null) {
@@ -36,18 +29,23 @@ function input(f, name, value, error, norm = null) {
   return html`<input name="${name}" id="${name}" value="${typeof v === 'number' ? fmtNum(v) : v}"${isNum ? html` inputmode="decimal" class="num${error ? ' invalid' : ''}"${norm?.min != null ? html` data-min="${norm.min}"` : ''}${norm?.max != null ? html` data-max="${norm.max}"` : ''}` : html` class="${f.wide ? 'wide' : ''}"`}${f.placeholder ? html` placeholder="${f.placeholder}"` : ''}${error ? html` aria-invalid="true" title="${error}"` : ''}>`;
 }
 
-function reportForm(req, { exam, tplKey, data, rawValues = null, errors = {}, conclusion, norms, suggestion }) {
-  const tpl = getTemplate(tplKey);
+/** Ficha do ato e idade do doente no dia do exame (decide que normativo se aplica). */
+function formCtx(exam) {
+  return { form: usableForm(exam.type_form), age: ageAt(exam.birth_date, exam.starts_at) };
+}
+
+function reportForm(req, { exam, data, rawValues = null, errors = {}, conclusion, suggestion }) {
+  const { form: tpl, age } = formCtx(exam);
   const val = (name, fallback) => (rawValues ? rawValues[name] : fallback);
-  const technique = tpl.technique.map((f) => {
+  const technique = tpl.technique.fields.map((f) => {
     const name = `f.${f.key}`;
     return html`<label>${f.label}${f.unit ? html` <span class="muted">(${f.unit})</span>` : ''}${input(f, name, val(name, data[f.key] ?? f.default), errors[name])}</label>`;
   });
   const sections = tpl.sections.map((s) => {
     const bilateral = s.fields.some((f) => f.eyes);
     const rows = s.fields.map((f) => {
-      const n = norms[`${tplKey}.${f.key}`];
-      const norm = normText(n);
+      const n = f.type === 'number' ? normFor(f, age) : null;
+      const norm = n ? html`${normText(n)}${ageText(n) ? html`<small>${ageText(n)}</small>` : ''}` : '';
       const cell = (name, eye, v) => html`<span class="cell${eye ? ` ${eye}` : ''}">${input(f, name, v, errors[name], n)}${f.type === 'number' ? html`<output class="nflag" for="${name}" aria-live="polite"></output>` : ''}</span>`;
       if (f.eyes) {
         const od = `f.${f.key}.OD`;
@@ -69,10 +67,11 @@ function reportForm(req, { exam, tplKey, data, rawValues = null, errors = {}, co
 
   return html`<form method="post" action="/exames/${exam.id}/relatorio" class="sheet report-form guarded" novalidate>
     ${Object.keys(errors).length ? html`<div class="notice err" role="alert">Há valores inválidos (assinalados a vermelho). Use números, com vírgula ou ponto decimal.</div>` : ''}
-    ${tpl.technique.length ? html`<fieldset class="r-fieldset"><legend>Técnica</legend><div class="grid3">${technique}</div></fieldset>` : ''}
+    ${tpl.technique.fields.length ? html`<fieldset class="r-fieldset"><legend>Técnica</legend><div class="grid3">${technique}</div></fieldset>` : ''}
     ${sections}
     <fieldset class="r-fieldset"><legend>Conclusão</legend>
-      ${suggestion ? html`<p class="hint">Sugestão gerada a partir dos normativos do laboratório. Reveja-a antes de validar.</p>` : ''}
+      ${suggestion ? html`<p class="hint">Sugestão gerada a partir dos normativos do laboratório${age === null ? '' : ` para ${age} anos`}. Reveja-a antes de validar.</p>` : ''}
+      ${age === null && numericNormsByAge(tpl) ? html`<p class="hint">Sem data de nascimento: os normativos que dependem da idade não se aplicam. <a href="/exames/${exam.id}">Identificar o doente</a></p>` : ''}
       <textarea name="conclusion" rows="5" maxlength="4000">${conclusion}</textarea>
     </fieldset>
     <div class="form-actions sticky">
@@ -83,6 +82,8 @@ function reportForm(req, { exam, tplKey, data, rawValues = null, errors = {}, co
     </div>
   </form>`;
 }
+
+const numericNormsByAge = (form) => form.sections.some((s) => s.fields.some((f) => f.norms.some((n) => n.ageMin != null || n.ageMax != null)));
 
 export default async function reportRoutes(app, { db }) {
   const guard = (req, reply) => {
@@ -111,14 +112,14 @@ export default async function reportRoutes(app, { db }) {
           <div class="report-preview">${raw(rep.final_html)}</div>`,
       });
     }
-    const tplKey = rep?.template || exam.report_template;
     const data = rep ? JSON.parse(rep.data) : {};
     let conclusion = rep?.conclusion || '';
-    const suggestion = !conclusion ? suggestConclusion(tplKey, data, settings.norms) : '';
+    const { form, age } = formCtx(exam);
+    const suggestion = !conclusion ? suggestConclusion(form, data, age) : '';
     if (!conclusion) conclusion = suggestion;
     return send(reply, req, {
       title: 'Relatório', active: 'hoje',
-      body: html`${head}${reportForm(req, { exam, tplKey, data, conclusion, norms: settings.norms, suggestion })}`,
+      body: html`${head}${reportForm(req, { exam, data, conclusion, suggestion })}`,
     });
   });
 
@@ -128,8 +129,8 @@ export default async function reportRoutes(app, { db }) {
     if (exam.status !== 'realizado') return reply.redirect(`/exames/${exam.id}?err=relatorio_estado`);
     const existing = loadReport(db, exam.id);
     if (existing?.status === 'validado') return reply.redirect(`/exames/${exam.id}/relatorio?err=estado`);
-    const tplKey = existing?.template || exam.report_template;
-    const tpl = getTemplate(tplKey);
+    const tplKey = exam.type_code;
+    const { form: tpl } = formCtx(exam);
     const settings = reportSettings(db);
     const body = req.body || {};
     const { data, errors, raw: rawValues } = parseReportForm(tpl, body);
@@ -140,7 +141,7 @@ export default async function reportRoutes(app, { db }) {
       return send(reply, req, {
         title: 'Relatório', active: 'hoje',
         body: html`${pageHead(html`Relatório · ${exam.type_name}`, { back: { href: `/exames/${exam.id}`, label: 'Exame' }, sub: patientLabel(exam) })}
-          ${reportForm(req, { exam, tplKey, data, rawValues, errors, conclusion, norms: settings.norms })}`,
+          ${reportForm(req, { exam, data, rawValues, errors, conclusion })}`,
       }, 400);
     }
     if (acao === 'validar' && !exam.patient_process && !exam.patient_name) {
@@ -148,7 +149,7 @@ export default async function reportRoutes(app, { db }) {
         title: 'Relatório', active: 'hoje',
         body: html`${pageHead(html`Relatório · ${exam.type_name}`, { back: { href: `/exames/${exam.id}`, label: 'Exame' }, sub: patientLabel(exam) })}
           <div class="notice err" role="alert"><p>Identifique o doente (n.º de processo ou nome) <a href="/exames/${exam.id}">na página do exame</a> antes de validar. Nada foi validado; o que escreveu continua no formulário (pode guardar como rascunho).</p></div>
-          ${reportForm(req, { exam, tplKey, data, conclusion, norms: settings.norms })}`,
+          ${reportForm(req, { exam, data, conclusion })}`,
       }, 400);
     }
     if (acao === 'validar' && !conclusion) {
@@ -156,7 +157,7 @@ export default async function reportRoutes(app, { db }) {
         title: 'Relatório', active: 'hoje',
         body: html`${pageHead(html`Relatório · ${exam.type_name}`, { back: { href: `/exames/${exam.id}`, label: 'Exame' }, sub: patientLabel(exam) })}
           <div class="notice err" role="alert">Escreva a conclusão antes de validar.</div>
-          ${reportForm(req, { exam, tplKey, data, conclusion, norms: settings.norms })}`,
+          ${reportForm(req, { exam, data, conclusion })}`,
       }, 400);
     }
 
@@ -169,7 +170,7 @@ export default async function reportRoutes(app, { db }) {
         const validatedAt = new Date().toISOString();
         const request = db.prepare('SELECT * FROM requests WHERE id = ?').get(exam.request_id);
         const examType = db.prepare('SELECT * FROM exam_types WHERE id = ?').get(exam.exam_type_id);
-        const finalHtml = String(renderReport({ templateKey: tplKey, data, conclusion, exam, request, examType, settings, signedBy: req.user.name, validatedAt }));
+        const finalHtml = String(renderReport({ form: examType.form, data, conclusion, exam, request, examType, settings, signedBy: req.user.name, validatedAt }));
         db.prepare("UPDATE reports SET status = 'validado', final_html = ?, validated_at = ?, validated_by = ? WHERE exam_id = ? AND status = 'rascunho'")
           .run(finalHtml, validatedAt, req.user.id, exam.id);
         audit(db, req.user.id, 'relatorio_validado', 'exame', exam.id);
@@ -208,7 +209,7 @@ export default async function reportRoutes(app, { db }) {
     } else {
       const request = db.prepare('SELECT * FROM requests WHERE id = ?').get(exam.request_id);
       const examType = db.prepare('SELECT * FROM exam_types WHERE id = ?').get(exam.exam_type_id);
-      body = renderReport({ templateKey: rep.template, data: JSON.parse(rep.data), conclusion: rep.conclusion, exam, request, examType, settings: reportSettings(db), signedBy: req.user.name });
+      body = renderReport({ form: examType.form, data: JSON.parse(rep.data), conclusion: rep.conclusion, exam, request, examType, settings: reportSettings(db), signedBy: req.user.name });
     }
     return send(reply, req, {
       title: 'Imprimir relatório',

@@ -816,3 +816,57 @@ input.small-num { max-width: 4.5rem; }
 .sec-h { flex-wrap: wrap; }
 .sec-h .aside .btn.link { white-space: normal; text-align: right; }
 @media (max-width: 760px) { .sec-h .aside:has([data-fill-week]) { margin-left: 0; flex-basis: 100%; } .sec-h .aside .btn.link { text-align: left; padding-left: 0; } }
+
+/* ---------- Ficha do ato ---------- */
+.ficha-link { display: inline-flex; flex-direction: column; font-weight: 700; text-decoration: none; line-height: 1.25; }
+.ficha-link small { font-weight: 500; color: var(--ink-3); font-size: 0.8rem; }
+.ficha-link:hover small { color: var(--accent); }
+.ficha-title { max-width: 40rem; font-weight: 700; }
+.ficha-sec .fs-head { display: flex; gap: 0.75rem; align-items: center; padding-bottom: 0.5rem; border-bottom: var(--rule-w) var(--rule-style) var(--ink); margin-bottom: 0.25rem; flex-wrap: wrap; }
+.ficha-sec .sec-title { flex: 1 1 18rem; max-width: 34rem; font-weight: 700; }
+.ficha-params { width: 100%; border-collapse: collapse; margin-bottom: 0.5rem; }
+.ficha-params th { text-align: left; font-size: 0.8rem; font-weight: 700; color: var(--ink-3); padding: 0.45rem 0.35rem; white-space: nowrap; }
+.ficha-params td { padding: 0.3rem 0.35rem; vertical-align: middle; }
+.ficha-params th:first-child, .ficha-params td:first-child { padding-left: 0; }
+.ficha-params td:first-child { width: 42%; }
+.ficha-params input:not([type="checkbox"]), .ficha-params select { min-height: 2.4rem; padding: 0.3rem 0.5rem; }
+.ficha-params .unit { width: 6.5rem; }
+.ficha-params .center { text-align: center; }
+.ficha-params tbody.fp { border-top: 1px solid var(--rule-soft); }
+.ficha-params tr.sub td { padding-top: 0; padding-bottom: 0.6rem; width: auto; }
+.ficha-params tr.sub label { flex-direction: row; align-items: center; gap: 0.35rem; font-weight: 500; font-size: 0.86rem; color: var(--ink-2); }
+.ficha-params tr.sub textarea { max-width: 26rem; min-height: 0; }
+.fp:not([data-kind="select"]) .show-select, .fp:not([data-kind="number"]) .show-number { display: none; }
+.marker { display: inline-block; margin-top: 0.2rem; font-size: 0.8rem; color: var(--ink-3); }
+.bands { display: flex; flex-wrap: wrap; gap: 0.4rem 0.9rem; align-items: center; }
+.bands-l { font-size: 0.82rem; font-weight: 700; color: var(--ink-3); display: inline-flex; align-items: center; gap: 0.2rem; }
+.band { display: inline-flex; flex-wrap: wrap; gap: 0.3rem 0.5rem; align-items: center; padding: 0.2rem 0.3rem 0.2rem 0.6rem; border: 1px solid var(--rule); border-radius: var(--r); background: var(--sheet); }
+.band input.band-age { width: 3.4rem; text-align: right; font-family: var(--f-mono); }
+.band input.lim { width: 5.5rem; text-align: right; font-family: var(--f-mono); }
+.btn.mini { min-height: 2.1rem; padding: 0 0.55rem; font-size: 0.85rem; }
+.btn.mini[data-wide] { color: var(--accent); border-style: dashed; }
+.acts-col { white-space: nowrap; display: inline-flex; gap: 0.25rem; }
+td.acts-col { display: table-cell; }
+td.acts-col .btn + .btn { margin-left: 0.25rem; }
+.sentence { margin-top: 1rem; max-width: 52rem; }
+.sentence textarea { font-family: var(--f-mono); font-size: 0.9rem; }
+.markers { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; margin: 0.5rem 0; }
+.chip { font: inherit; font-family: var(--f-mono); font-size: 0.82rem; padding: 0.15rem 0.5rem; border: 1px solid var(--accent-line); background: var(--accent-soft); color: var(--accent); border-radius: 999px; cursor: pointer; min-height: 2rem; }
+.chip:hover { border-color: var(--accent); }
+.sentence-preview { max-width: 52rem; padding: 0.6rem 0.85rem; background: var(--sunk); border-radius: var(--r); }
+.entry .norm small { display: block; font-size: 0.75rem; }
+.notice ul { margin: 0.25rem 0 0; padding-left: 1.2rem; font-weight: 500; }
+@media (max-width: 760px) {
+  .ficha-params thead { display: none; }
+  .ficha-params, .ficha-params tbody.fp { display: block; }
+  .ficha-params tbody.fp tr:first-child { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; padding-top: 0.6rem; }
+  .ficha-params tbody.fp tr:first-child td { padding: 0; width: auto; }
+  .ficha-params tbody.fp tr:first-child td:first-child { grid-column: 1 / -1; }
+  .ficha-params tr.sub { display: block; } .ficha-params tr.sub td { display: block; padding: 0.4rem 0 0.6rem; }
+  .fp:not([data-kind="select"]) .show-select, .fp:not([data-kind="number"]) .show-number { display: none; }
+}
+@media (max-width: 760px) {
+  .band { display: flex; width: 100%; gap: 0.4rem 0.6rem; padding: 0.4rem 0.5rem; }
+  .band label { flex: 0 0 auto; }
+  .band input.lim { width: 4.8rem; }
+}

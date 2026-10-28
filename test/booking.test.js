@@ -176,3 +176,74 @@ test('rotas de push exigem sessão e aceitam JSON da própria origem', async () 
   });
   assert.equal(sub.statusCode, 200);
 });
+
+test('ficha do ato: criar ato novo, acrescentar parâmetros e normativos por idade, usar no relatório', async () => {
+  const { app, db, hugo } = await setup();
+  // Ato novo em branco: abre logo a ficha
+  const created = await post(app, '/admin/exames/novo', hugo, { name: 'Campo visual', minutes: '30', from: '' });
+  const m = created.headers.location.match(/^\/admin\/exames\/(\d+)\/ficha/);
+  assert.ok(m, created.headers.location);
+  const id = Number(m[1]);
+  const fichaPage = await get(app, `/admin/exames/${id}/ficha`, hugo);
+  assert.equal(fichaPage.statusCode, 200);
+  // Estado atual do formulário, como o browser o enviaria
+  const read = () => JSON.parse(db.prepare('SELECT form FROM exam_types WHERE id = ?').pluck().get(id));
+  const bodyOf = (form, extra = {}) => {
+    const b = { title: form.title, 't.text': form.technique.text };
+    const put = (p, f) => {
+      Object.assign(b, { [`${p}.key`]: f.key, [`${p}.label`]: f.label, [`${p}.unit`]: f.unit, [`${p}.type`]: f.type, [`${p}.options`]: f.options.join('\n'), [`${p}.default`]: f.default });
+      if (f.eyes) b[`${p}.eyes`] = '1';
+      f.norms.forEach((n, k) => ['ageMin', 'ageMax', 'min', 'max'].forEach((x) => { b[`${p}.n.${k}.${x}`] = n[x] == null ? '' : String(n[x]); }));
+    };
+    form.technique.fields.forEach((f, j) => put(`F.t.${j}`, f));
+    form.sections.forEach((s, i) => { b[`S.${i}.title`] = s.title; s.fields.forEach((f, j) => put(`F.${i}.${j}`, f)); });
+    return { ...b, ...extra };
+  };
+  // Acrescentar um parâmetro numérico à primeira secção (operação estrutural: guarda mesmo vazio)
+  let form = read();
+  let r = await post(app, `/admin/exames/${id}/ficha`, hugo, bodyOf(form, { op: 'add-f:0' }));
+  assert.equal(r.statusCode, 302);
+  form = read();
+  const last = form.sections[0].fields.length - 1;
+  assert.equal(form.sections[0].fields[last].label, '');
+  // Dar-lhe nome e dois intervalos por idade
+  form.sections[0].fields[last] = { ...form.sections[0].fields[last], label: 'Sensibilidade média', unit: 'dB', eyes: true,
+    norms: [{ ageMin: null, ageMax: 40, min: 28, max: null }, { ageMin: 40, ageMax: null, min: 25, max: null }] };
+  // Número inválido: não guarda nada
+  const bad = bodyOf(form, { op: '' });
+  bad[`F.0.${last}.n.0.min`] = 'vinte';
+  r = await post(app, `/admin/exames/${id}/ficha`, hugo, bad);
+  assert.equal(r.statusCode, 400);
+  assert.match(r.body, /Não foi guardado/);
+  r = await post(app, `/admin/exames/${id}/ficha`, hugo, bodyOf(form, { op: '' }));
+  assert.match(r.headers.location, /msg=guardado/);
+  form = read();
+  const f = form.sections[0].fields[last];
+  assert.equal(f.key, 'sensibilidade_media'); // chave legível a partir do nome
+  assert.equal(f.norms.length, 2);
+  // Frase de técnica com marcador de um campo inexistente: avisa
+  r = await post(app, `/admin/exames/${id}/ficha`, hugo, bodyOf(form, { op: '', 't.text': 'Feito com {nada}.' }));
+  assert.match((await get(app, `/admin/exames/${id}/ficha`, hugo)).body, /Marcadores sem campo/);
+
+  // Exame deste ato, doente de 30 anos: aplica o intervalo &lt;40
+  const tue = nextWeekday(2);
+  const c = await post(app, '/pedidos', hugo, { patient_process: '42', birth_date: `${Number(tue.slice(0, 4)) - 30}-01-01`, origin: 'externo', priority: 'normal', exam_type_id: String(id) });
+  const examId = Number(c.headers.location.split('/')[2]);
+  db.prepare("UPDATE exams SET status = 'realizado', starts_at = ?, ends_at = ?, performed_at = 'x' WHERE id = ?").run(`${addDays(todayLocal(), -1)}T09:00`, `${addDays(todayLocal(), -1)}T09:30`, examId);
+  const repPage = await get(app, `/exames/${examId}/relatorio`, hugo);
+  assert.match(repPage.body, /Sensibilidade média/);
+  assert.match(repPage.body, /≥ 28/);
+  assert.match(repPage.body, /data-min="28"/);
+  const v = await post(app, `/exames/${examId}/relatorio`, hugo, { [`f.${f.key}.OD`]: '26', [`f.${f.key}.OE`]: '30', acao: 'validar', conclusion: 'Ver valores.' });
+  assert.match(v.headers.location, /msg=validado/);
+  const html = db.prepare('SELECT final_html FROM reports WHERE exam_id = ?').pluck().get(examId);
+  assert.match(html, /para a idade \(30 anos\)/);
+  assert.match(html, /↓/);
+
+  // Copiar a ficha de outro ato
+  const erg = db.prepare("SELECT id FROM exam_types WHERE code = 'erg'").pluck().get();
+  await post(app, `/admin/exames/${id}/ficha/copiar`, hugo, { from: String(erg) });
+  assert.equal(read().title, 'Eletrorretinograma de campo total');
+  // O antigo separador de normativos encaminha para os atos
+  assert.equal((await get(app, '/admin/normativos', hugo)).headers.location, '/admin/exames');
+});
