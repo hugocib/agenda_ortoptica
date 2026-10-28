@@ -303,9 +303,20 @@
         });
         testBtn.addEventListener('click', function () {
           testBtn.disabled = true;
-          post('/push/teste').then(function (r) { say(r.ok ? 'Teste enviado. Deve aparecer dentro de segundos.' : 'O servidor não conseguiu enviar. Veja os registos do servidor.'); })
-            .catch(function () { say('O servidor não respondeu.'); })
-            .finally(function () { testBtn.disabled = false; });
+          say('A testar…');
+          // 1) Garante que está ativo o service worker mais recente (os antigos não tratam notificações).
+          reg.update().catch(function () {}).then(function () {
+            // 2) Notificação local: se esta não aparecer, o problema é do browser/sistema, não da app.
+            return reg.showNotification('Ortóptica — teste local', { body: 'Se vê isto, este dispositivo mostra notificações.', tag: 'teste-local' });
+          }).then(function () {
+            return post('/push/teste');
+          }).then(function (r) {
+            say(r.ok
+              ? 'Devem aparecer duas notificações: «teste local» já, e outra enviada pelo servidor dentro de segundos. Se não aparecer nenhuma, as notificações do browser estão desligadas no sistema (Mac: Definições do Sistema → Notificações → Firefox; Windows: Definições → Sistema → Notificações) ou há um modo «Não incomodar» ativo.'
+              : 'O serviço de notificações recusou o envio (' + (r.status || 'sem resposta') + '). Desative e volte a ativar neste dispositivo.');
+          }).catch(function (e) {
+            say('Este browser não deixou mostrar a notificação (' + (e && e.message ? e.message : 'erro') + '). Confirme a autorização nas definições do site.');
+          }).finally(function () { testBtn.disabled = false; });
         });
       });
     }

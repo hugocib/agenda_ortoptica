@@ -140,7 +140,7 @@ export default async function examRoutes(app, { db }) {
           <span class="muted">ocupa <strong>${roundUp(e.minutes, ctx.step)} min</strong>${ctx.maxPerDay[e.exam_type_id] ? ` · máx. ${ctx.maxPerDay[e.exam_type_id]} por dia` : ''}</span></div>
         ${e.starts_at ? html`<div class="notice warn"><p>Está marcado para <strong>${when(e)}</strong>.${direct ? ' Ao escolher outra hora, desmarque também a antiga no Siima.' : ' O secretariado vê a nova hora no link de reservas; a marcação no Siima é com elas.'}</p></div>` : ''}
         ${withTimes.length ? html`<form method="post" action="/exames/${id}/agendar">
-          <p class="sec-note">Toque numa hora para marcar. ${help(`Só aparecem vagas livres nas próximas ${weeks} semanas (alterável em Administração → Horário).`)}</p>
+          <div class="sec-note">Toque numa hora para marcar. ${help(`Só aparecem vagas livres nas próximas ${weeks} semanas (alterável em Administração → Horário).`)}</div>
           <div class="slot-days">${withTimes.map((d) => html`<section class="slot-day"><h2>${cap(fmtDateLong(d.date))} <span class="muted">${fmtDate(d.date)}</span></h2>
             ${slotGroups(d.times, ctx.availability, d.date, (time) => html`<button class="slot" type="submit" name="starts_at" value="${d.date}T${time}" aria-label="${fmtDateLong(d.date)} às ${time}">${time}</button>`)}</section>`)}</div>
         </form>` : html`<p class="empty">Não há vagas nas próximas ${weeks} semanas para um exame de ${roundUp(e.minutes, ctx.step)} min. Pode alargar o horário em <a href="/admin">Administração</a> ou remover <a href="/bloqueios">bloqueios</a>.</p>`}`,

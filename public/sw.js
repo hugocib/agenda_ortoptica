@@ -49,15 +49,23 @@ self.addEventListener('fetch', (event) => {
 // Notificações push: só texto sem dados de doentes (tipo de exame, hora, quem reservou).
 self.addEventListener('push', (event) => {
   let data = {};
-  try { data = event.data ? event.data.json() : {}; } catch { data = { title: 'Ortóptica', body: event.data && event.data.text() }; }
-  event.waitUntil(self.registration.showNotification(data.title || 'Ortóptica', {
-    body: data.body || '',
-    tag: data.tag,
-    renotify: Boolean(data.tag),
-    icon: '/static/icon-192.png',
-    badge: '/static/icon-192.png',
-    data: { url: data.url || '/hoje' },
-  }));
+  try { data = event.data ? event.data.json() : {}; } catch { data = { title: 'Ortóptica', body: event.data ? event.data.text() : '' }; }
+  const opts = { body: data.body || '', icon: '/static/icon-192.png', data: { url: data.url || '/hoje' } };
+  if (data.tag) opts.tag = data.tag;
+  // Se as opções falharem num browser, mostra pelo menos o título e o texto.
+  event.waitUntil(self.registration.showNotification(data.title || 'Ortóptica', opts)
+    .catch(() => self.registration.showNotification(data.title || 'Ortóptica', { body: data.body || '' })));
+});
+
+// O browser pode trocar a subscrição (o Firefox fá-lo às vezes): regista a nova no servidor.
+self.addEventListener('pushsubscriptionchange', (event) => {
+  event.waitUntil((async () => {
+    const r = await fetch('/push/chave', { credentials: 'same-origin' });
+    const { key } = await r.json();
+    const raw = atob(key.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (key.length % 4)) % 4));
+    const sub = await self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: Uint8Array.from(raw, (c) => c.charCodeAt(0)) });
+    await fetch('/push/subscrever', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sub.toJSON()) });
+  })().catch(() => {}));
 });
 
 self.addEventListener('notificationclick', (event) => {

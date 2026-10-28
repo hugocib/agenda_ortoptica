@@ -67,7 +67,7 @@ export default async function authRoutes(app, { db, config, limiter }) {
       ${req.user.mustChangePassword ? html`<div class="notice warn"><p>Defina uma palavra-passe sua antes de continuar: <a href="#password">alterar palavra-passe</a>.</p></div>` : ''}
       ${error ? html`<div class="notice err" role="alert">${error}</div>` : ''}
       <section class="sec"><div class="sec-h"><h2>Aspeto</h2><span class="aside"><a href="/aparencia">Ver e escolher temas</a></span></div>
-        <p class="sec-note">Tema atual: <b>${themeById(req.look.theme).name}</b>. ${help('O modo claro/escuro fica guardado só neste dispositivo.')}</p>
+        <div class="sec-note">Tema atual: <b>${themeById(req.look.theme).name}</b>. ${help('O modo claro/escuro fica guardado só neste dispositivo.')}</div>
         <form method="post" action="/aparencia/modo" class="toolbar">
           <input type="hidden" name="back" value="/conta">
           <span class="seg" role="radiogroup" aria-label="Modo neste dispositivo">${['auto', 'claro', 'escuro'].map((m) => html`<label><input type="radio" name="modo" value="${m}"${req.look.mode === m ? raw(' checked') : ''}> ${{ auto: 'Automático', claro: 'Claro', escuro: 'Escuro' }[m]}</label>`)}</span>

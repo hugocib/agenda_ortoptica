@@ -33,11 +33,11 @@ export function removeSubscription(db, userId, endpoint) {
  * Envia a todos os dispositivos dos ortoptistas (ou só aos de `userId`). Não bloqueia quem chama:
  * as falhas ficam no registo e as subscrições que já não existem são apagadas.
  */
-export function notify(db, { title, body, url = '/hoje', tag }, { userId = null, log = null, send = webpush.sendNotification } = {}) {
+export function notify(db, { title, body, url = '/hoje', tag }, { userId = null, log = null, send = webpush.sendNotification, details = false } = {}) {
   const subs = userId
     ? db.prepare('SELECT * FROM push_subscriptions WHERE user_id = ?').all(userId)
     : db.prepare(`SELECT s.* FROM push_subscriptions s JOIN users u ON u.id = s.user_id WHERE u.active = 1 AND u.role = 'ortoptista'`).all();
-  if (!subs.length) return Promise.resolve(0);
+  if (!subs.length) return Promise.resolve(details ? { sent: 0, statuses: [] } : 0);
   const keys = vapidKeys(db);
   const subject = getSetting(db, 'push_subject') || 'mailto:ortoptica@example.invalid';
   const payload = JSON.stringify({ title, body, url, tag });
@@ -45,9 +45,12 @@ export function notify(db, { title, body, url = '/hoje', tag }, { userId = null,
     TTL: 12 * 3600,
     urgency: 'normal',
     vapidDetails: { subject, publicKey: keys.publicKey, privateKey: keys.privateKey },
-  }).then(() => 1).catch((err) => {
+  }).then((res) => { log?.info({ status: res?.statusCode }, 'notificação push aceite'); return { ok: 1, status: res?.statusCode }; }).catch((err) => {
     if (err?.statusCode === 404 || err?.statusCode === 410) db.prepare('DELETE FROM push_subscriptions WHERE id = ?').run(s.id);
-    else log?.warn({ status: err?.statusCode, msg: err?.message }, 'notificação push falhou');
-    return 0;
-  }))).then((r) => r.reduce((a, b) => a + b, 0));
+    else log?.warn({ status: err?.statusCode, msg: err?.message, body: String(err?.body || '').slice(0, 200) }, 'notificação push falhou');
+    return { ok: 0, status: err?.statusCode || 0 };
+  }))).then((r) => {
+    const sent = r.reduce((a, b) => a + b.ok, 0);
+    return details ? { sent, statuses: r.map((x) => x.status) } : sent;
+  });
 }
