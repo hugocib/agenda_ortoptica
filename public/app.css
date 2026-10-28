@@ -669,14 +669,6 @@ input.small-num { max-width: 4.5rem; }
 
 /* Caixa de entrada: reservas e pedidos à espera de decisão */
 .inbox { background: var(--sheet); border: 1px solid var(--sheet-border); box-shadow: var(--sheet-shadow); border-radius: var(--r-lg); padding: 1rem 1.25rem 0.5rem; border-left: 4px solid var(--owed-mark); }
-.inbox-i { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.35rem 1.5rem; align-items: center; }
-.inbox-i > .ex-title { grid-column: 1; }
-.inbox-i > .ex-meta, .inbox-i > .ask { grid-column: 1; margin: 0; }
-.inbox-a { grid-column: 2; grid-row: 1 / span 3; display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; justify-content: flex-end; }
-.inbox-a form { display: flex; gap: 0.4rem; align-items: center; margin: 0; }
-.inbox-a input { min-height: 2.5rem; width: 11rem; }
-.inbox-a .refuse input { width: 12rem; }
-.ask { color: var(--owed-ink); font-weight: 600; }
 .inline-edit { margin-top: 1rem; }
 .inline-edit input { width: 14rem; }
 .edit-box { margin-top: 1rem; border-top: 1px dashed var(--rule-strong); padding-top: 0.75rem; }
@@ -711,11 +703,7 @@ input.small-num { max-width: 4.5rem; }
 @media (max-width: 760px) {
   .route.n4 { grid-template-columns: 1fr; }
   .inbox { padding: 0.85rem 1rem 0.25rem; margin-left: -0.25rem; margin-right: -0.25rem; }
-  .inbox-i { grid-template-columns: 1fr; }
-  .inbox-a { grid-column: 1; grid-row: auto; justify-content: flex-start; margin-top: 0.35rem; }
-  .inbox-a form { flex: 1 1 100%; }
-  .inbox-a input, .inbox-a .refuse input { flex: 1; width: auto; min-width: 0; }
-  .res-link { grid-template-columns: 1fr; }
+          .res-link { grid-template-columns: 1fr; }
   .res-link .when { grid-row: auto; }
   .inline-edit input { width: auto; flex: 1; }
   .brand-sub { display: none; }
@@ -902,25 +890,8 @@ label .help { vertical-align: middle; }
   .entry tbody tr + tr { border-top: 1px solid var(--rule-soft); }
 }
 
-/* Recusar em dois passos (caixa «Por confirmar») */
-.inbox-a details.refuse > summary { list-style: none; }
-.inbox-a details.refuse > summary::-webkit-details-marker { display: none; }
-.inbox-a details.refuse[open] { flex: 1 1 100%; order: 3; }
-.inbox-a details.refuse[open] > summary { background: var(--sunk); border-color: var(--ink-3); }
-.refuse-form { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: flex-end; margin-top: 0.6rem; padding: 0.75rem; background: var(--late-fill); border: 1px solid var(--late-line); border-radius: var(--r); }
-.refuse-form label { flex: 1 1 16rem; font-weight: 600; font-size: 0.88rem; }
-.refuse-form .opt { margin-top: 0; }
-.refuse-form input { min-height: 2.5rem; width: 100%; }
-.inbox-a .refuse-form input { width: 100%; }
-.inbox-a { align-self: start; }
-.inbox-a details.refuse[open] { display: flex; flex-direction: column; align-items: flex-end; }
-.inbox-a details.refuse[open] .refuse-form { align-self: stretch; }
-.inbox-a { justify-content: flex-end; }
 @media (max-width: 760px) {
-  .inbox-a { justify-content: flex-start; }
-  .inbox-a form.confirm { flex: 1 1 auto; }
-  .inbox-a details.refuse[open] { align-items: flex-start; }
-}
+      }
 
 /* Vagas como escolha + barra de confirmação (página de reservas) */
 .slot-fs { border: 0; padding: 0; margin: 0; min-width: 0; }
@@ -947,3 +918,34 @@ label .help { vertical-align: middle; }
 [data-mode="escuro"] .mode-toggle .mode-dark, .mode-toggle .is-dark .mode-dark { display: none; }
 [data-mode="escuro"] .mode-toggle .mode-light, .mode-toggle .is-dark .mode-light { display: block; }
 @media (max-width: 760px) { .mode-toggle .mode-l { display: none; } }
+
+/* ---------- Caixa «Por confirmar» ---------- */
+.inbox-i { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 1.5rem; row-gap: 0; align-items: center; }
+.inbox-info { min-width: 0; }
+.inbox-info .ex-meta { margin-top: 0.2rem; }
+.ask { color: var(--owed-ink); font-weight: 600; margin: 0.3rem 0 0; }
+.inbox-a { display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem; flex-wrap: nowrap; }
+.inbox-a form { margin: 0; }
+.inbox-confirm { display: flex; align-items: center; gap: 0.5rem; }
+.inbox-confirm input { width: 11rem; min-height: 2.5rem; }
+.inbox-a .btn, .inbox-confirm .btn { min-height: 2.5rem; }
+.inbox-a [aria-expanded="true"] { background: var(--sunk); border-color: var(--ink-3); }
+.refuse-panel {
+  grid-column: 1 / -1; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 0.35rem 0.6rem; align-items: center;
+  margin: 0.75rem 0 0.15rem; padding: 0.75rem 0.85rem; background: var(--late-fill); border: 1px solid var(--late-line); border-radius: var(--r);
+}
+.refuse-panel label { flex-direction: row; font-size: 0.9rem; white-space: nowrap; gap: 0.35rem; }
+.refuse-panel .opt { margin: 0; }
+.refuse-panel input { min-height: 2.5rem; }
+.refuse-panel .btn { min-height: 2.5rem; }
+.refuse-note { grid-column: 2 / -1; margin: 0; font-size: 0.84rem; color: var(--ink-2); }
+@media (max-width: 760px) {
+  .inbox-i { grid-template-columns: 1fr; }
+  .inbox-a { justify-content: flex-start; flex-wrap: wrap; margin-top: 0.6rem; }
+  /* O formulário «desaparece» da paginação: requisição numa linha, botões lado a lado por baixo. */
+  .inbox-confirm { display: contents; }
+  .inbox-confirm input { flex: 1 1 100%; width: auto; min-width: 0; }
+  .refuse-panel { grid-template-columns: 1fr 1fr; }
+  .refuse-panel label, .refuse-panel input, .refuse-note { grid-column: 1 / -1; }
+  .refuse-panel .btn { width: 100%; }
+}

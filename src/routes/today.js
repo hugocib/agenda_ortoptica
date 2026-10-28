@@ -1,4 +1,4 @@
-import { html } from '../html.js';
+import { html, raw } from '../html.js';
 import { getSetting } from '../db.js';
 import { examsWhere } from '../repo.js';
 import { SHOWN_STATUSES } from '../domain/status.js';
@@ -65,30 +65,32 @@ function byDay(exams, render) {
 const whenShort = (ldt) => `${cap(fmtDateLong(ldt.slice(0, 10)).split(',')[0]).slice(0, 3)} ${fmtDate(ldt).slice(0, 5)} ${ldt.slice(11)}`;
 
 /** Uma reserva ou pedido de alteração à espera de decisão, com as ações ali mesmo. */
-export function inboxItem(e, back = `${BACK}#confirmar`, { compact = false } = {}) {
-  const head = html`${compact ? '' : html`<a class="ex-title" href="/exames/${e.id}">${e.type_name}</a>`}
-    <div class="ex-meta"><span class="when">${whenShort(e.starts_at)}</span>${e.booked_by_name ? html`<span class="by">por ${e.change_by_name || e.booked_by_name}</span>` : ''}${patientLabel(e)}</div>`;
-  if (e.change_kind) {
-    const what = e.change_kind === 'mover'
-      ? html`<p class="ask">Pede para mudar para <b class="when">${whenShort(e.change_starts_at)}</b>.</p>`
-      : html`<p class="ask">Pede para <b>cancelar</b>.</p>`;
-    return html`<li class="inbox-i">${head}${what}
-      <div class="inbox-a">${postButton(`/exames/${e.id}/alteracao/aceitar`, e.change_kind === 'mover' ? 'Aceitar nova hora' : 'Aceitar cancelamento', { kind: 'primary', back })}
-        ${refuseBox(`/exames/${e.id}/alteracao/recusar`, back, 'Recusar pedido', 'Fica tudo como estava; o motivo aparece ao secretariado.')}</div></li>`;
-  }
-  return html`<li class="inbox-i">${head}
-    <div class="inbox-a"><form method="post" action="/exames/${e.id}/confirmar" class="confirm"><input type="hidden" name="back" value="${back}">
+export function inboxItem(e, back = `${BACK}#confirmar`, { compact = false, openRefuse = null } = {}) {
+  const base = back.split('#')[0].split('?')[0];
+  const panelId = `recusa-${e.id}`;
+  const open = openRefuse === e.id;
+  const info = html`<div class="inbox-info">${compact ? '' : html`<a class="ex-title" href="/exames/${e.id}">${e.type_name}</a>`}
+    <div class="ex-meta"><span class="when">${whenShort(e.starts_at)}</span>${e.booked_by_name ? html`<span class="by">por ${e.change_by_name || e.booked_by_name}</span>` : ''}${patientLabel(e)}</div>
+    ${e.change_kind === 'mover' ? html`<p class="ask">Pede para mudar para <b class="when">${whenShort(e.change_starts_at)}</b>.</p>` : e.change_kind === 'cancelar' ? html`<p class="ask">Pede para <b>cancelar</b>.</p>` : ''}</div>`;
+  const main = e.change_kind
+    ? postButton(`/exames/${e.id}/alteracao/aceitar`, e.change_kind === 'mover' ? 'Aceitar nova hora' : 'Aceitar cancelamento', { kind: 'primary', back })
+    : html`<form method="post" action="/exames/${e.id}/confirmar" class="inbox-confirm"><input type="hidden" name="back" value="${back}">
         ${e.requisition ? '' : html`<input name="requisition" maxlength="40" required placeholder="N.º de requisição" aria-label="N.º de requisição (obrigatório para confirmar)" class="mono">`}
-        <button class="btn primary" type="submit">Confirmar</button></form>
-      ${refuseBox(`/exames/${e.id}/recusar`, back, 'Recusar reserva', 'A vaga fica livre; o motivo aparece ao secretariado.')}</div></li>`;
-}
-
-/** Recusar em dois passos: o motivo só aparece depois de tocar em «Recusar…». */
-function refuseBox(action, back, label, note) {
-  return html`<details class="refuse"><summary class="btn">Recusar…</summary>
-    <form method="post" action="${action}" class="refuse-form"><input type="hidden" name="back" value="${back}">
-      <label>Motivo <span class="opt">opcional · ${note}</span><input name="note" maxlength="200" placeholder="p. ex. sem disponibilidade nesse dia"></label>
-      <button class="btn danger" type="submit">${label}</button></form></details>`;
+        <button class="btn primary" type="submit">Confirmar</button></form>`;
+  const refuseAction = e.change_kind ? `/exames/${e.id}/alteracao/recusar` : `/exames/${e.id}/recusar`;
+  const note = e.change_kind ? 'Fica tudo como estava; o motivo aparece ao secretariado.' : 'A vaga fica livre; o motivo aparece ao secretariado.';
+  return html`<li class="inbox-i" id="c-${e.id}">
+    ${info}
+    <div class="inbox-a">${main}
+      <a class="btn" href="${base}?recusar=${e.id}#c-${e.id}" data-refuse="${panelId}" aria-controls="${panelId}" aria-expanded="${open ? 'true' : 'false'}">Recusar…</a></div>
+    <form method="post" action="${refuseAction}" class="refuse-panel" id="${panelId}"${open ? '' : raw(' hidden')}>
+      <input type="hidden" name="back" value="${back}">
+      <label for="${panelId}-m">Motivo da recusa <span class="opt">opcional</span></label>
+      <input id="${panelId}-m" name="note" maxlength="200" placeholder="p. ex. sem disponibilidade nesse dia">
+      <a class="btn ghost" href="${back}" data-refuse-cancel="${panelId}">Cancelar</a>
+      <button class="btn danger" type="submit">${e.change_kind ? 'Recusar pedido' : 'Recusar reserva'}</button>
+      <p class="refuse-note">${note}</p>
+    </form></li>`;
 }
 
 function orthoPage(req, db) {
@@ -120,7 +122,7 @@ function orthoPage(req, db) {
       ${flash(req.query, req)}
       ${inbox.length ? html`<section class="sec inbox" id="confirmar" aria-labelledby="h-conf">
         <div class="sec-h"><h2 id="h-conf">Por confirmar</h2><span class="count owed">${inbox.length}</span>${help(html`<p>Reservas e pedidos feitos pelo secretariado no link de reservas.</p><p>Para confirmar uma reserva é preciso o n.º de requisição. Ao recusar, o motivo aparece ao secretariado.</p>`)}</div>
-        <ul class="list">${inbox.map((e) => inboxItem(e))}</ul>
+        <ul class="list">${inbox.map((e) => inboxItem(e, undefined, { openRefuse: Number(req.query.recusar) || null }))}</ul>
       </section>` : ''}
       <div class="work">
         <div>

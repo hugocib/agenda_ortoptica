@@ -67,7 +67,7 @@ export default async function examRoutes(app, { db }) {
         })}
         ${flash(req.query, req)}
         ${e.status === 'pendente' || e.change_kind ? html`<section class="sec inbox" id="confirmar"><div class="sec-h"><h2>${e.change_kind ? 'Pedido do secretariado' : 'Reserva por confirmar'}</h2></div>
-          <ul class="list">${inboxItem(e, back, { compact: true })}</ul></section>` : ''}
+          <ul class="list">${inboxItem(e, back, { compact: true, openRefuse: Number(req.query.recusar) || null })}</ul></section>` : ''}
         ${e.status === 'recusado' && e.decision_note ? html`<div class="notice warn"><p>Recusada: ${e.decision_note}</p></div>` : ''}
         <section class="sec" aria-label="Percurso do exame">
           <p class="route-src">${SOURCE_LABEL[source]}${source === 'secretariado' && e.booked_by_name ? html` · reservado por <b>${e.booked_by_name}</b>` : ''}</p>

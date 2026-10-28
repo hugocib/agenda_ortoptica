@@ -180,6 +180,21 @@
     if (ml) ml.textContent = dark ? 'Claro' : 'Escuro';
   }
 
+  // «Recusar…»: abre o painel do motivo no próprio item (sem JS, a ligação abre-o pelo servidor).
+  document.addEventListener('click', function (ev) {
+    var t = ev.target.closest('[data-refuse], [data-refuse-cancel]');
+    if (!t) return;
+    var id = t.getAttribute('data-refuse') || t.getAttribute('data-refuse-cancel');
+    var panel = document.getElementById(id);
+    var opener = document.querySelector('[data-refuse="' + id + '"]');
+    if (!panel || !opener) return;
+    ev.preventDefault();
+    var show = t.hasAttribute('data-refuse') ? panel.hidden : false;
+    panel.hidden = !show;
+    opener.setAttribute('aria-expanded', show ? 'true' : 'false');
+    if (show) { var inp = panel.querySelector('input[name="note"]'); if (inp) inp.focus(); } else opener.focus();
+  });
+
   // Datas dd/mm/aaaa: as barras aparecem sozinhas enquanto se escreve os números.
   document.querySelectorAll('input[data-date]').forEach(function (inp) {
     inp.addEventListener('input', function (ev) {
