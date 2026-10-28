@@ -24,7 +24,11 @@ test('link de reservas: token errado não mostra nada; certo mostra vagas sem da
   const page = await get(app, `${base}?tipo=${types.oct}`);
   assert.equal(page.statusCode, 200);
   assert.ok(!page.body.includes('Maria Doente') && !page.body.includes('55555'));
-  assert.match(page.body, /class="slot"/);
+  // As horas são uma escolha (rádio); só o botão de confirmação envia a reserva
+  assert.match(page.body, /<input type="radio" name="start"/);
+  assert.ok(!/<button class="slot"/.test(page.body));
+  assert.equal((page.body.match(/type="submit"/g) || []).length, 2); // «Ver horas livres» + «Confirmar reserva»
+  assert.match(page.body, /Confirmar reserva/);
   assert.match(page.body, /Manhã/);
   assert.match(page.body, /Tarde/);
   assert.ok(!page.body.includes('style="'), 'sem estilos inline (CSP)');

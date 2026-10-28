@@ -153,6 +153,22 @@
     });
   });
 
+  // Reservas: a barra de confirmação resume a escolha (exame, dia e hora, quem reserva).
+  document.querySelectorAll('[data-confirm-bar]').forEach(function (bar) {
+    var form = bar.closest('form');
+    var sum = bar.querySelector('[data-summary]');
+    var exam = bar.getAttribute('data-exam');
+    var update = function () {
+      var r = form.querySelector('input[name="start"]:checked');
+      var who = form.querySelector('[name="quem"]');
+      var name = who && who.value ? ' · ' + (who.options ? who.options[who.selectedIndex].text : who.value) : '';
+      bar.classList.toggle('ready', !!r);
+      sum.textContent = r ? exam + ' · ' + r.getAttribute('data-label') + name : 'Escolha uma hora.';
+    };
+    form.addEventListener('change', update);
+    update();
+  });
+
   // Datas dd/mm/aaaa: as barras aparecem sozinhas enquanto se escreve os números.
   document.querySelectorAll('input[data-date]').forEach(function (inp) {
     inp.addEventListener('input', function (ev) {

@@ -61,10 +61,24 @@ function weekSlots(db, { monday, minutes, typeId, ignoreExamId = null }) {
   return { days, ctx };
 }
 
-function slotPicker(days, availability, label) {
+/**
+ * Vagas como escolha (rádio), não como envio: tocar numa hora só a seleciona. A reserva só é
+ * feita no botão da barra de confirmação, que mostra o resumo do que vai ser enviado.
+ */
+function slotPicker(days, availability, { exam, submit }) {
   if (!days.length) return html`<p class="empty">Sem vagas para este exame nesta semana. Experimente a semana seguinte.</p>`;
-  return html`<div class="slot-days">${days.map((d) => html`<section class="slot-day"><h2>${cap(fmtDateLong(d.date))} <span class="muted">${fmtDate(d.date)}</span></h2>
-    ${slotGroups(d.times, availability, d.date, (t) => html`<button class="slot" type="submit" name="start" value="${d.date}T${t}" aria-label="${label} ${fmtDateLong(d.date)} às ${t}">${t}</button>`)}</section>`)}</div>`;
+  let first = true;
+  const radio = (d, t) => {
+    const req = first ? raw(' required') : '';
+    first = false;
+    return html`<label class="slot slot-pick"><input type="radio" name="start" value="${d.date}T${t}"${req} data-label="${fmtDateLong(d.date)} às ${t}"><span>${t}</span></label>`;
+  };
+  return html`<fieldset class="slot-fs"><legend class="sr">Escolha a hora</legend><div class="slot-days">${days.map((d) => html`<section class="slot-day"><h2>${cap(fmtDateLong(d.date))} <span class="muted">${fmtDate(d.date)}</span></h2>
+    ${slotGroups(d.times, availability, d.date, (t) => radio(d, t))}</section>`)}</div></fieldset>
+    <div class="confirm-bar" data-confirm-bar data-exam="${exam}">
+      <p class="confirm-sum" data-summary aria-live="polite">Escolha uma hora.</p>
+      <button class="btn primary big" type="submit">${submit}</button>
+    </div>`;
 }
 
 function whoField(names, chosen) {
@@ -137,9 +151,9 @@ export default async function bookingRoutes(app, { db }) {
                   ${whoField(names, chosen)}
                   <label>N.º de requisição <span class="opt">opcional; pode pôr depois</span><input name="requisicao" maxlength="40" class="mono" autocomplete="off"></label>
                 </div>
-                <div class="book-week"><p class="sec-note">Toque numa hora para reservar (${tipo.name}: <b>${roundUp(tipo.minutes, step)} min</b>).</p>
+                <div class="book-week"><p class="sec-note">Escolha a hora e confirme em baixo (${tipo.name}: <b>${roundUp(tipo.minutes, step)} min</b>).</p>
                   ${weekNav(`${base}?tipo=${tipo.id}&`, monday, first, last)}</div>
-                ${slotPicker(days, ctx?.availability || [], 'Reservar')}
+                ${slotPicker(days, ctx?.availability || [], { exam: tipo.name, submit: 'Confirmar reserva' })}
               </form>` : html`<p class="empty">Escolha o tipo de exame para ver as horas livres.</p>`}
           </section>
           <section class="sec book-list" id="reservas" aria-labelledby="h-res">
@@ -224,7 +238,7 @@ export default async function bookingRoutes(app, { db }) {
           <form method="post" action="${here}/mover" class="guarded">
             <div class="form-grid book-who">${whoField(names, chosen)}</div>
             <div class="book-week">${weekNav(`${here}?`, monday, first, last)}</div>
-            ${slotPicker(days, ctx?.availability || [], pending ? 'Mudar para' : 'Pedir')}
+            ${slotPicker(days, ctx?.availability || [], { exam: e.type_name, submit: pending ? 'Confirmar nova hora' : 'Enviar pedido de alteração' })}
           </form></section>
           <section class="sec"><div class="sec-h"><h2>${pending ? 'Anular' : 'Cancelar'}</h2></div>
             <form method="post" action="${here}/cancelar" class="toolbar">${whoField(names, chosen)}

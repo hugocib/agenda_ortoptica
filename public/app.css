@@ -921,3 +921,20 @@ label .help { vertical-align: middle; }
   .inbox-a form.confirm { flex: 1 1 auto; }
   .inbox-a details.refuse[open] { align-items: flex-start; }
 }
+
+/* Vagas como escolha + barra de confirmação (página de reservas) */
+.slot-fs { border: 0; padding: 0; margin: 0; min-width: 0; }
+.slot-pick { position: relative; display: flex; align-items: center; justify-content: center; flex-direction: row; font: inherit; font-family: var(--f-mono); font-weight: 700; font-size: 1rem;
+  min-height: 2.75rem; border-radius: var(--r-xs); border: 1px solid var(--accent-line); background: var(--sheet); color: var(--accent); cursor: pointer; }
+.slot-pick input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.slot-pick:hover { border-color: var(--accent); background: var(--accent-soft); }
+.slot-pick:has(input:checked) { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); box-shadow: 0 0 0 2px var(--sheet), 0 0 0 4px var(--accent); }
+.slot-pick:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+.confirm-bar { position: sticky; bottom: 0; z-index: 6; display: flex; flex-wrap: wrap; gap: 0.6rem 1.25rem; align-items: center; justify-content: space-between;
+  margin-top: 1.25rem; padding: 0.85rem 1rem; background: var(--sheet); border: 1px solid var(--rule-strong); border-radius: var(--r-lg); box-shadow: 0 -4px 18px rgb(0 0 0 / 0.07); }
+.confirm-sum { margin: 0; font-weight: 600; color: var(--ink-3); }
+.confirm-bar.ready .confirm-sum { color: var(--ink); }
+@media (max-width: 760px) {
+  .confirm-bar { margin-left: -0.25rem; margin-right: -0.25rem; }
+  .confirm-bar .btn { flex: 1 1 100%; }
+}

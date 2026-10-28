@@ -2,7 +2,7 @@
 
 App web (PWA) para gerir os exames de ortóptica e função visual no CIBIT-ICNAS. Corre em Docker num servidor e abre-se no browser (computador ou telemóvel), ou instala-se como app.
 
-- **Secretariado:** usa um link de reservas, sem conta nem dados de doentes. Escolhe o tipo de exame, vê as vagas livres (manhã e tarde) e reserva; o exame ocupa logo a duração certa. Indica o n.º de requisição do Siima e quem reservou. Pode pedir para mudar a hora ou cancelar.
+- **Secretariado:** usa um link de reservas, sem conta nem dados de doentes. Escolhe o tipo de exame, vê as vagas livres (manhã e tarde), escolhe a hora e confirma num botão com o resumo da reserva; o exame ocupa logo a duração certa. Indica o n.º de requisição do Siima e quem reservou. Pode pedir para mudar a hora ou cancelar.
 - **Ortoptista:** confirma ou recusa reservas e pedidos de alteração, vê o dia, marca exames como realizados ou falta, preenche o relatório a partir dos valores do exame, valida e imprime, e assinala quando o exame ficou executado no Siima.
 - **Exames fora do circuito:** o ortoptista cria o pedido (com o doente identificado) e faz o percurso completo, incluindo a marcação no Siima.
 - **Nada fica esquecido:** o ecrã «Hoje» mostra sempre o que está por confirmar, por fechar, por relatar e por executar no Siima, com contador no menu e notificação no telemóvel.
