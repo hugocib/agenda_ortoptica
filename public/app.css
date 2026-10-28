@@ -901,3 +901,23 @@ label .help { vertical-align: middle; }
   .entry tbody tr:nth-child(even) th, .entry tbody tr:nth-child(even) td { background: transparent; }
   .entry tbody tr + tr { border-top: 1px solid var(--rule-soft); }
 }
+
+/* Recusar em dois passos (caixa «Por confirmar») */
+.inbox-a details.refuse > summary { list-style: none; }
+.inbox-a details.refuse > summary::-webkit-details-marker { display: none; }
+.inbox-a details.refuse[open] { flex: 1 1 100%; order: 3; }
+.inbox-a details.refuse[open] > summary { background: var(--sunk); border-color: var(--ink-3); }
+.refuse-form { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: flex-end; margin-top: 0.6rem; padding: 0.75rem; background: var(--late-fill); border: 1px solid var(--late-line); border-radius: var(--r); }
+.refuse-form label { flex: 1 1 16rem; font-weight: 600; font-size: 0.88rem; }
+.refuse-form .opt { margin-top: 0; }
+.refuse-form input { min-height: 2.5rem; width: 100%; }
+.inbox-a .refuse-form input { width: 100%; }
+.inbox-a { align-self: start; }
+.inbox-a details.refuse[open] { display: flex; flex-direction: column; align-items: flex-end; }
+.inbox-a details.refuse[open] .refuse-form { align-self: stretch; }
+.inbox-a { justify-content: flex-end; }
+@media (max-width: 760px) {
+  .inbox-a { justify-content: flex-start; }
+  .inbox-a form.confirm { flex: 1 1 auto; }
+  .inbox-a details.refuse[open] { align-items: flex-start; }
+}

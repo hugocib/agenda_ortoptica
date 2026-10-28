@@ -74,15 +74,21 @@ export function inboxItem(e, back = `${BACK}#confirmar`, { compact = false } = {
       : html`<p class="ask">Pede para <b>cancelar</b>.</p>`;
     return html`<li class="inbox-i">${head}${what}
       <div class="inbox-a">${postButton(`/exames/${e.id}/alteracao/aceitar`, e.change_kind === 'mover' ? 'Aceitar nova hora' : 'Aceitar cancelamento', { kind: 'primary', back })}
-        <form method="post" action="/exames/${e.id}/alteracao/recusar" class="refuse"><input type="hidden" name="back" value="${back}">
-          <input name="note" maxlength="200" placeholder="Motivo (opcional)" aria-label="Motivo da recusa"><button class="btn" type="submit">Recusar</button></form></div></li>`;
+        ${refuseBox(`/exames/${e.id}/alteracao/recusar`, back, 'Recusar pedido', 'Fica tudo como estava; o motivo aparece ao secretariado.')}</div></li>`;
   }
   return html`<li class="inbox-i">${head}
     <div class="inbox-a"><form method="post" action="/exames/${e.id}/confirmar" class="confirm"><input type="hidden" name="back" value="${back}">
         ${e.requisition ? '' : html`<input name="requisition" maxlength="40" required placeholder="N.º de requisição" aria-label="N.º de requisição (obrigatório para confirmar)" class="mono">`}
         <button class="btn primary" type="submit">Confirmar</button></form>
-      <form method="post" action="/exames/${e.id}/recusar" class="refuse"><input type="hidden" name="back" value="${back}">
-        <input name="note" maxlength="200" placeholder="Motivo (opcional)" aria-label="Motivo da recusa"><button class="btn" type="submit" data-confirm="Recusar esta reserva? A vaga fica livre.">Recusar</button></form></div></li>`;
+      ${refuseBox(`/exames/${e.id}/recusar`, back, 'Recusar reserva', 'A vaga fica livre; o motivo aparece ao secretariado.')}</div></li>`;
+}
+
+/** Recusar em dois passos: o motivo só aparece depois de tocar em «Recusar…». */
+function refuseBox(action, back, label, note) {
+  return html`<details class="refuse"><summary class="btn">Recusar…</summary>
+    <form method="post" action="${action}" class="refuse-form"><input type="hidden" name="back" value="${back}">
+      <label>Motivo <span class="opt">opcional · ${note}</span><input name="note" maxlength="200" placeholder="p. ex. sem disponibilidade nesse dia"></label>
+      <button class="btn danger" type="submit">${label}</button></form></details>`;
 }
 
 function orthoPage(req, db) {
