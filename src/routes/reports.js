@@ -12,6 +12,7 @@ function reportSettings(db) {
     report_signer: getSetting(db, 'report_signer'),
     report_signer_id: getSetting(db, 'report_signer_id'),
     report_medical_line: getSetting(db, 'report_medical_line'),
+    report_logo: getSetting(db, 'report_logo'),
   };
 }
 
@@ -67,11 +68,16 @@ function reportForm(req, { exam, data, rawValues = null, errors = {}, conclusion
 
   return html`<form method="post" action="/exames/${exam.id}/relatorio" class="sheet report-form guarded" novalidate>
     ${Object.keys(errors).length ? html`<div class="notice err" role="alert">Há valores inválidos (assinalados a vermelho). Use números, com vírgula ou ponto decimal.</div>` : ''}
+    ${exam.source !== 'investigacao' ? html`<div class="clin-info">${exam.clinical_info
+      ? html`<span class="lead">Informação clínica</span> <span>${exam.clinical_info}</span>`
+      : html`<span class="muted">Sem informação clínica do requisitante.</span>`} <a href="/exames/${exam.id}#dados">${exam.clinical_info ? 'alterar' : 'indicar'}</a></div>` : ''}
     ${tpl.technique.fields.length ? html`<fieldset class="r-fieldset"><legend>Técnica</legend><div class="grid3">${technique}</div></fieldset>` : ''}
     ${sections}
     <fieldset class="r-fieldset"><legend>Conclusão</legend>
       ${suggestion ? html`<p class="hint">Sugestão gerada a partir dos normativos do laboratório${age === null ? '' : ` para ${age} anos`}. Reveja-a antes de validar.</p>` : ''}
-      ${age === null && numericNormsByAge(tpl) ? html`<p class="hint">Sem data de nascimento: os normativos que dependem da idade não se aplicam. <a href="/exames/${exam.id}">Identificar o doente</a></p>` : ''}
+      ${age === null && numericNormsByAge(tpl) ? (exam.source === 'investigacao'
+        ? html`<p class="hint">Participante identificado só por código: os normativos que dependem da idade não se aplicam.</p>`
+        : html`<p class="hint">Sem data de nascimento: os normativos que dependem da idade não se aplicam. <a href="/exames/${exam.id}">Identificar o doente</a></p>`) : ''}
       <textarea name="conclusion" rows="5" maxlength="4000">${conclusion}</textarea>
     </fieldset>
     <div class="form-actions sticky">

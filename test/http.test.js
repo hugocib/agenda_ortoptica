@@ -180,7 +180,7 @@ test('fora do circuito: pedido → agendar → marcado no Siima → realizado �
 test('redirecionamento só para caminhos locais', async () => {
   const { app, db } = await makeApp();
   const sec = await login(app, 'hugo');
-  const id = db.prepare('SELECT id FROM exam_types LIMIT 1').pluck().get();
+  const id = db.prepare("SELECT id FROM exam_types WHERE kind = 'clinico' ORDER BY id LIMIT 1").pluck().get();
   const c = await post(app, '/pedidos', sec, { patient_process: '1', origin: 'externo', priority: 'normal', exam_type_id: String(id) });
   const examId = Number(c.headers.location.split('/')[2]);
   const r = await post(app, `/exames/${examId}/cancelar`, sec, { back: 'https://evil.example/' });

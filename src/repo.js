@@ -2,18 +2,20 @@
 // Cada operação de escrita corre numa transação IMMEDIATE: duas reservas para a mesma vaga
 // ao mesmo tempo nunca ficam ambas aceites.
 import { audit, getSetting } from './db.js';
-import { checkSlot, roundUp } from './domain/slots.js';
+import { checkFree, checkSlot, roundUp } from './domain/slots.js';
 import { BUSY_STATUSES, canTransition, TRANSITIONS } from './domain/status.js';
 import { addDays, addMinutes, nowLocal, todayLocal } from './time.js';
 
 const NOW_SQL = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 
-export function listExamTypes(db, { activeOnly = true } = {}) {
-  return db.prepare(`SELECT * FROM exam_types ${activeOnly ? 'WHERE active = 1' : ''} ORDER BY sort, name`).all();
+/** kind: 'clinico' (atos/MCDTs), 'investigacao' (avaliações de investigação) ou null (todos). */
+export function listExamTypes(db, { activeOnly = true, kind = 'clinico' } = {}) {
+  const where = [activeOnly ? 'active = 1' : '', kind ? 'kind = ?' : ''].filter(Boolean);
+  return db.prepare(`SELECT * FROM exam_types ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY sort, name`).all(...(kind ? [kind] : []));
 }
 
-const EXAM_SELECT = `SELECT e.*, t.name AS type_name, t.code AS type_code, t.report_template, t.form AS type_form,
-  r.source, r.booked_by_name, r.patient_process, r.patient_name, r.birth_date, r.origin, r.project, r.referrer, r.priority, r.notes,
+const EXAM_SELECT = `SELECT e.*, t.name AS type_name, t.code AS type_code, t.report_template, t.form AS type_form, t.kind AS type_kind,
+  r.source, r.booked_by_name, r.patient_process, r.patient_name, r.birth_date, r.origin, r.project, r.referrer, r.priority, r.notes, r.clinical_info,
   rp.status AS report_status
   FROM exams e
   JOIN exam_types t ON t.id = e.exam_type_id
@@ -35,11 +37,11 @@ export function getRequest(db, id) {
 /** Pedido criado pelo ortoptista (fora do circuito): com doente identificado e um ou mais exames. */
 export function createRequest(db, user, req, examTypeIds, requisition = '') {
   return db.transaction(() => {
-    const info = db.prepare(`INSERT INTO requests (source, patient_process, patient_name, birth_date, origin, project, referrer, priority, notes, created_by)
-      VALUES ('direto', @patient_process, @patient_name, @birth_date, @origin, @project, @referrer, @priority, @notes, @created_by)`)
-      .run({ ...req, created_by: user.id });
+    const info = db.prepare(`INSERT INTO requests (source, patient_process, patient_name, birth_date, origin, project, referrer, priority, notes, clinical_info, created_by)
+      VALUES ('direto', @patient_process, @patient_name, @birth_date, @origin, @project, @referrer, @priority, @notes, @clinical_info, @created_by)`)
+      .run({ clinical_info: '', ...req, created_by: user.id });
     const requestId = Number(info.lastInsertRowid);
-    const getType = db.prepare('SELECT * FROM exam_types WHERE id = ? AND active = 1');
+    const getType = db.prepare("SELECT * FROM exam_types WHERE id = ? AND active = 1 AND kind = 'clinico'");
     const ins = db.prepare('INSERT INTO exams (request_id, exam_type_id, minutes, is_electro, requisition) VALUES (?, ?, ?, ?, ?)');
     for (const tid of examTypeIds) {
       const t = getType.get(tid);
@@ -57,6 +59,72 @@ export function updatePatient(db, user, requestId, data) {
     origin = @origin, project = @project WHERE id = @id`).run({ ...data, id: requestId });
   if (res.changes) audit(db, user.id, 'alterar_doente', 'pedido', requestId);
   return { ok: res.changes === 1 };
+}
+
+/** Informação clínica do requisitante (suspeita/observações), para o relatório. */
+export function setClinicalInfo(db, user, requestId, text) {
+  const v = String(text || '').trim().slice(0, 2000);
+  const res = db.prepare("UPDATE requests SET clinical_info = ? WHERE id = ? AND source <> 'investigacao'").run(v, requestId);
+  if (res.changes) audit(db, user.id, 'informacao_clinica', 'pedido', requestId);
+  return { ok: res.changes === 1 };
+}
+
+// ---------- Investigação ----------
+
+/** Exames/avaliações que ocupam um dia (para verificar sobreposições de uma avaliação). */
+function busyOn(db, date) {
+  return scheduleContext(db, date, date).busy;
+}
+
+/**
+ * Nova avaliação de investigação: participante só com o código do estudo. Com data e hora fica
+ * logo agendada; a duração é a do tipo, salvo indicação.
+ * data: { code, project, typeId, startsAt, minutes, notes }
+ */
+export function createResearch(db, user, data) {
+  return db.transaction(() => {
+    const t = db.prepare("SELECT * FROM exam_types WHERE id = ? AND active = 1 AND kind = 'investigacao'").get(data.typeId);
+    if (!t) return { ok: false, reason: 'dados_invalidos' };
+    const minutes = data.minutes || t.minutes;
+    const slot = checkFree(data.startsAt, minutes, { busy: busyOn(db, data.startsAt.slice(0, 10)) });
+    if (!slot.ok) return slot;
+    const r = db.prepare(`INSERT INTO requests (source, patient_process, origin, project, notes, created_by)
+      VALUES ('investigacao', ?, 'projeto', ?, ?, ?)`).run(data.code, data.project, data.notes || '', user.id);
+    const requestId = Number(r.lastInsertRowid);
+    const info = db.prepare(`INSERT INTO exams (request_id, exam_type_id, status, starts_at, ends_at, minutes, is_electro, confirmed_at)
+      VALUES (?, ?, 'agendado', ?, ?, ?, ?, ${NOW_SQL})`).run(requestId, t.id, data.startsAt, slot.end, minutes, t.is_electro);
+    const id = Number(info.lastInsertRowid);
+    audit(db, user.id, 'criar', 'pedido', requestId, { investigacao: true });
+    audit(db, user.id, 'agendar', 'exame', id, { para: data.startsAt });
+    return { ok: true, id, requestId };
+  }).immediate();
+}
+
+/** Mudar dia, hora, duração, tipo ou dados do participante de uma avaliação de investigação. */
+export function updateResearch(db, user, examId, data) {
+  return db.transaction(() => {
+    const exam = db.prepare(`SELECT e.* FROM exams e JOIN requests r ON r.id = e.request_id WHERE e.id = ? AND r.source = 'investigacao'`).get(examId);
+    if (!exam) return { ok: false, reason: 'nao_existe' };
+    if (['cancelado', 'recusado'].includes(exam.status)) return { ok: false, reason: 'estado' };
+    const t = db.prepare("SELECT * FROM exam_types WHERE id = ? AND kind = 'investigacao'").get(data.typeId);
+    if (!t) return { ok: false, reason: 'dados_invalidos' };
+    // Com ficha já começada, o tipo (e portanto a ficha) não muda.
+    const hasReport = db.prepare('SELECT 1 FROM reports WHERE exam_id = ?').get(exam.id);
+    if (hasReport && t.id !== exam.exam_type_id) return { ok: false, reason: 'tipo_com_ficha' };
+    const slot = checkFree(data.startsAt, data.minutes, { busy: busyOn(db, data.startsAt.slice(0, 10)), ignoreExamId: exam.id });
+    if (!slot.ok) return slot;
+    db.prepare(`UPDATE exams SET exam_type_id = ?, starts_at = ?, ends_at = ?, minutes = ?, is_electro = ?,
+      status = CASE WHEN status = 'por_agendar' THEN 'agendado' ELSE status END, updated_at = ${NOW_SQL} WHERE id = ?`)
+      .run(t.id, data.startsAt, slot.end, data.minutes, t.is_electro, exam.id);
+    db.prepare('UPDATE requests SET patient_process = ?, project = ?, notes = ? WHERE id = ?').run(data.code, data.project, data.notes || '', exam.request_id);
+    audit(db, user.id, 'alterar', 'exame', exam.id, { de: exam.starts_at, para: data.startsAt });
+    return { ok: true };
+  }).immediate();
+}
+
+/** Projetos já usados (sugestões ao escrever). */
+export function knownProjects(db) {
+  return db.prepare("SELECT project FROM requests WHERE project <> '' GROUP BY project ORDER BY MAX(created_at) DESC LIMIT 40").pluck().all();
 }
 
 /** Exames que ocupam a agenda entre duas datas, mais as horas propostas em pedidos de alteração. */
@@ -94,6 +162,7 @@ export function scheduleExam(db, user, examId, startsAt, now = new Date()) {
     if (!exam) return { ok: false, reason: 'nao_existe' };
     const action = exam.status === 'por_agendar' ? 'agendar' : 'reagendar';
     const source = sourceOfExam(db, exam);
+    if (source === 'investigacao') return { ok: false, reason: 'estado' };
     if (!canTransition(action, exam.status, source)) return { ok: false, reason: 'estado' };
     const slot = checkFor(db, exam, startsAt, now);
     if (!slot.ok) return slot;
@@ -197,7 +266,8 @@ export function setSiimaRegistered(db, user, examId, value) {
   return db.transaction(() => {
     const res = value
       ? db.prepare(`UPDATE exams SET siima_registered_at = ${NOW_SQL}, siima_registered_by = ?
-          WHERE id = ? AND status = 'realizado' AND siima_registered_at IS NULL`).run(user.id, examId)
+          WHERE id = ? AND status = 'realizado' AND siima_registered_at IS NULL
+          AND request_id IN (SELECT id FROM requests WHERE source <> 'investigacao')`).run(user.id, examId)
       : db.prepare('UPDATE exams SET siima_registered_at = NULL, siima_registered_by = NULL WHERE id = ? AND siima_registered_at IS NOT NULL').run(examId);
     if (res.changes !== 1) return { ok: false, reason: 'estado' };
     audit(db, user.id, value ? 'siima_registado' : 'siima_registado_desfeito', 'exame', examId);
@@ -217,7 +287,7 @@ export function setRequisition(db, actor, examId, value) {
 /** Reserva uma vaga: fica «pendente» até o ortoptista confirmar. */
 export function reserve(db, { typeId, startsAt, requisition = '', name }, now = new Date()) {
   return db.transaction(() => {
-    const t = db.prepare('SELECT * FROM exam_types WHERE id = ? AND active = 1').get(typeId);
+    const t = db.prepare("SELECT * FROM exam_types WHERE id = ? AND active = 1 AND kind = 'clinico'").get(typeId);
     if (!t) return { ok: false, reason: 'dados_invalidos' };
     const slot = checkFor(db, { id: 0, minutes: t.minutes, exam_type_id: t.id }, startsAt, now);
     if (!slot.ok) return slot;
@@ -290,8 +360,10 @@ export function counts(db, today) {
     porAgendar: one("SELECT COUNT(*) FROM exams WHERE status = 'por_agendar'"),
     porMarcarSiima: one(`SELECT COUNT(*) FROM exams e JOIN requests r ON r.id = e.request_id
       WHERE r.source = 'direto' AND e.status = 'agendado' AND e.siima_booked_at IS NULL`),
-    porRegistarSiima: one("SELECT COUNT(*) FROM exams WHERE status = 'realizado' AND siima_registered_at IS NULL"),
-    porRegistarAntigo: one("SELECT MIN(starts_at) FROM exams WHERE status = 'realizado' AND siima_registered_at IS NULL"),
+    porRegistarSiima: one(`SELECT COUNT(*) FROM exams e JOIN requests r ON r.id = e.request_id
+      WHERE r.source <> 'investigacao' AND e.status = 'realizado' AND e.siima_registered_at IS NULL`),
+    porRegistarAntigo: one(`SELECT MIN(e.starts_at) FROM exams e JOIN requests r ON r.id = e.request_id
+      WHERE r.source <> 'investigacao' AND e.status = 'realizado' AND e.siima_registered_at IS NULL`),
     relatoriosPendentes: one(`SELECT COUNT(*) FROM exams e LEFT JOIN reports r ON r.exam_id = e.id
       WHERE e.status = 'realizado' AND (r.id IS NULL OR r.status = 'rascunho')`),
     porFechar: one("SELECT COUNT(*) FROM exams WHERE status = 'agendado' AND starts_at < ?", `${today}T00:00`),

@@ -216,6 +216,7 @@ a.ex-title:hover { color: var(--accent); text-decoration: underline; }
 /* Percurso grande (página do exame) */
 .route { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .route.n4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.route.n3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .route-src { margin: 0 0 1rem; color: var(--ink-3); font-size: 0.9rem; }
 .stop { position: relative; padding: 2rem 1rem 0.25rem 0; min-width: 0; }
 .stop::before { content: ""; position: absolute; left: 0; top: 0.2rem; width: 16px; height: 16px; border-radius: var(--node-r); transform: rotate(var(--node-rot)); border: 2px solid var(--ink-3); background: var(--paper); z-index: 1; }
@@ -701,7 +702,7 @@ input.small-num { max-width: 4.5rem; }
   .book { grid-template-columns: 1fr; }
 }
 @media (max-width: 760px) {
-  .route.n4 { grid-template-columns: 1fr; }
+  .route.n4, .route.n3 { grid-template-columns: 1fr; }
   .inbox { padding: 0.85rem 1rem 0.25rem; margin-left: -0.25rem; margin-right: -0.25rem; }
           .res-link { grid-template-columns: 1fr; }
   .res-link .when { grid-row: auto; }
@@ -957,3 +958,52 @@ td.acts-col .btn + .btn { margin-left: 0.25rem; }
   .refuse-panel label, .refuse-panel input, .refuse-note { grid-column: 1 / -1; }
   .refuse-panel .btn { width: 100%; }
 }
+
+/* ---------- v1.5: investigação, logotipo, informação clínica, mapa semanal ---------- */
+.grid4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; }
+.grid3 > .w2, .grid4 > .w2 { grid-column: span 2; }
+@media (max-width: 760px) {
+  .grid4 { grid-template-columns: 1fr 1fr; }
+  .grid3 > .w2 { grid-column: auto; }
+}
+.part { font-family: var(--f-mono); font-weight: 700; color: var(--ink); font-size: 0.92em; white-space: nowrap; }
+.origin.o-invest { color: var(--accent); font-weight: 600; }
+.origin.o-invest b { color: var(--accent); }
+.sub-h { margin-top: 2rem; }
+.clin-info { display: flex; flex-wrap: wrap; gap: 0.25rem 0.6rem; align-items: baseline; padding: 0.6rem 0.85rem; margin-bottom: 1rem;
+  background: var(--sunk); border-radius: var(--r); font-size: 0.92rem; }
+.clin-info .lead { font-weight: 700; }
+/* Logotipo */
+.logo-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1rem; }
+.logo-prev { display: flex; align-items: center; justify-content: center; min-width: 8rem; height: 4rem; padding: 0.4rem 0.75rem;
+  background: #fff; border: 1px dashed var(--rule-strong); border-radius: var(--r); }
+.logo-prev img { max-height: 3.2rem; max-width: 12rem; object-fit: contain; }
+.logo-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; }
+.sr-file { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+.logo-form label.btn { display: inline-flex; flex-direction: row; cursor: pointer; }
+.logo-form label.btn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.r-header.with-logo { display: flex; align-items: center; gap: 12pt; }
+.r-logo { max-height: 16mm; max-width: 50mm; object-fit: contain; flex: none; }
+/* Mapa semanal */
+.paper.map { max-width: 277mm; padding: 12mm 12mm; }
+.map-h h1 { font-size: 15pt; margin: 0 0 2pt; color: #111; }
+.map-h p { margin: 0 0 8pt; color: #444; font-size: 9pt; }
+.map-t { width: 100%; border-collapse: collapse; font-size: 9.5pt; color: #111; }
+.map-t th, .map-t td { text-align: left; padding: 3pt 6pt; border-bottom: 0.5pt solid #bbb; vertical-align: top; }
+.map-t thead th { font-size: 8pt; text-transform: uppercase; letter-spacing: 0.04em; color: #555; border-bottom: 1pt solid #222; }
+.map-t .map-day th { padding-top: 9pt; font-size: 10.5pt; border-bottom: 1pt solid #222; background: none; }
+.map-t .map-day span { margin-left: 8pt; font-weight: 500; font-size: 8.5pt; color: #555; }
+.map-t .c-h { white-space: nowrap; width: 1%; }
+.map-t tbody { break-inside: avoid; }
+.map-t tr.s-pendente td { font-style: italic; }
+.map-t tr.s-faltou td { color: #777; text-decoration: line-through; }
+.map-t .muted { color: #666; }
+.print-toolbar .week-nav { display: inline-flex; align-items: center; gap: 0.25rem; }
+@media print {
+  @page map { size: A4 landscape; }
+  .paper.map { padding: 0; page: map; }
+}
+@media (max-width: 760px) {
+  .paper.map { padding: 6mm 4mm; overflow-x: auto; }
+}
+.map-t .nw { white-space: nowrap; }

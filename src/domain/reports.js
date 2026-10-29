@@ -396,20 +396,29 @@ export function renderReport(ctx) {
   });
 
   const header = (settings.report_header || []).map((l) => html`<div>${l}</div>`);
-
-  return html`<article class="report">
-  <header class="r-header">${header}</header>
-  <h1 class="r-title">${form.title}</h1>
-  <dl class="r-patient">
-    ${request.patient_name ? html`<div><dt>Nome</dt><dd>${request.patient_name}</dd></div>` : ''}
+  const logo = settings.report_logo && /^data:image\/(png|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(settings.report_logo)
+    ? html`<img class="r-logo" src="${settings.report_logo}" alt="">` : '';
+  // Investigação: o participante só tem o código do estudo; sem requisição, requisitante nem Siima.
+  const research = request.source === 'investigacao';
+  const identity = research
+    ? html`<div><dt>Participante</dt><dd>${request.patient_process}</dd></div>
+    <div><dt>Projeto</dt><dd>${request.project}</dd></div>`
+    : html`${request.patient_name ? html`<div><dt>Nome</dt><dd>${request.patient_name}</dd></div>` : ''}
     ${request.patient_process ? html`<div><dt>N.º processo</dt><dd>${request.patient_process}</dd></div>` : ''}
     ${exam.requisition ? html`<div><dt>N.º requisição</dt><dd>${exam.requisition}</dd></div>` : ''}
-    ${request.birth_date ? html`<div><dt>Data de nascimento</dt><dd>${fmtDate(request.birth_date)}${age !== null ? ` (${age} anos)` : ''}</dd></div>` : ''}
-    <div><dt>Data do exame</dt><dd>${fmtDateTime(exam.starts_at)}</dd></div>
-    <div><dt>Exame</dt><dd>${examType.name}</dd></div>
-    ${request.referrer ? html`<div><dt>Requisitante</dt><dd>${request.referrer}</dd></div>` : ''}
-    ${request.origin !== 'externo' ? html`<div><dt>Origem</dt><dd>${ORIGIN_LABEL[request.origin]}${request.project ? ` — ${request.project}` : ''}</dd></div>` : ''}
+    ${request.birth_date ? html`<div><dt>Data de nascimento</dt><dd>${fmtDate(request.birth_date)}${age !== null ? ` (${age} anos)` : ''}</dd></div>` : ''}`;
+
+  return html`<article class="report">
+  <header class="r-header${logo ? ' with-logo' : ''}">${logo}<div class="r-head-lines">${header}</div></header>
+  <h1 class="r-title">${form.title}</h1>
+  <dl class="r-patient">
+    ${identity}
+    <div><dt>${research ? 'Data da avaliação' : 'Data do exame'}</dt><dd>${fmtDateTime(exam.starts_at)}</dd></div>
+    <div><dt>${research ? 'Avaliação' : 'Exame'}</dt><dd>${examType.name}</dd></div>
+    ${!research && request.referrer ? html`<div><dt>Requisitante</dt><dd>${request.referrer}</dd></div>` : ''}
+    ${!research && request.origin !== 'externo' ? html`<div><dt>Origem</dt><dd>${ORIGIN_LABEL[request.origin]}${request.project ? ` — ${request.project}` : ''}</dd></div>` : ''}
   </dl>
+  ${!research && request.clinical_info ? html`<section class="r-section"><h2>Informação clínica</h2>${request.clinical_info.split(/\n+/).map((p) => html`<p>${p}</p>`)}</section>` : ''}
   ${techniqueText ? html`<section class="r-section"><h2>Técnica</h2><p>${techniqueText}</p></section>` : ''}
   <section class="r-section"><h2>Resultados</h2>${sections}
     ${checked ? html`<p class="r-note">↓ / ↑ abaixo / acima dos limites normativos do laboratório${age !== null ? ` para a idade (${age} anos)` : ''}.${findings.length ? '' : ' Sem valores fora dos limites.'}</p>` : ''}
@@ -417,9 +426,9 @@ export function renderReport(ctx) {
   <section class="r-section"><h2>Conclusão</h2>${conclusion ? conclusion.split(/\n+/).map((p) => html`<p>${p}</p>`) : html`<p class="empty">—</p>`}</section>
   <footer class="r-sign">
     <div class="sig"><div class="line"></div><div>${ctx.signedBy || ''}</div><div>${settings.report_signer || ''}</div><div>${settings.report_signer_id || ''}</div></div>
-    ${settings.report_medical_line ? html`<div class="sig"><div class="line"></div><div>Interpretação clínica</div><div>Médico(a)</div></div>` : ''}
+    ${settings.report_medical_line && !research ? html`<div class="sig"><div class="line"></div><div>Interpretação clínica</div><div>Médico(a)</div></div>` : ''}
   </footer>
-  <p class="r-meta">${ctx.validatedAt ? `Validado em ${fmtUtcLocal(ctx.validatedAt)}` : 'Rascunho — não validado'} · Exame n.º ${exam.id}</p>
+  <p class="r-meta">${ctx.validatedAt ? `Validado em ${fmtUtcLocal(ctx.validatedAt)}` : 'Rascunho — não validado'} · ${research ? 'Avaliação' : 'Exame'} n.º ${exam.id}</p>
 </article>`;
 }
 

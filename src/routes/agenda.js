@@ -5,6 +5,10 @@ import { examsWhere } from '../repo.js';
 import { addDays, fmtDate, fmtDateLong, fmtDateTime, isDate, isTime, mondayOf, nowLocal, toIsoDate, todayLocal } from '../time.js';
 import { fmtDuration } from '../domain/tape.js';
 import { cap, dateInput, dayTapeByPeriod, emptyState, examLine, flash, icon, pageHead, postButton, timeSelect } from '../ui.js';
+import { ORIGIN_LABEL, STATUS_LABEL } from '../domain/status.js';
+import { getSetting } from '../db.js';
+import { weekday } from '../time.js';
+
 import { dayData } from './today.js';
 import { idParam, send, str } from './util.js';
 
@@ -56,7 +60,7 @@ export default async function agendaRoutes(app, { db }) {
             <span class="range">${fmtDate(monday).slice(0, 5)} – ${fmtDate(sundayLast)}</span>
             <a class="btn ghost" href="/agenda?semana=${addDays(monday, 7)}" aria-label="Semana seguinte">${icon('dir', 'ico sm')}</a>
             ${isThisWeek ? '' : html`<a class="btn" href="/agenda">Esta semana</a>`}</nav>`,
-          actions: html`<a class="btn" href="/bloqueios">Bloqueios</a>`,
+          actions: html`<a class="btn" href="/agenda/mapa?semana=${monday}">Mapa semanal</a><a class="btn" href="/investigacao/nova">Avaliação de investigação</a><a class="btn" href="/bloqueios">Bloqueios</a>`,
         })}
         ${flash(req.query, req)}
         ${days.length ? html`<div class="week">${days.map((d) => html`<section class="day-col${d.date === today ? ' today' : ''}" aria-label="${fmtDateLong(d.date)}">
@@ -64,6 +68,59 @@ export default async function agendaRoutes(app, { db }) {
             <span class="aside">${!d.windows.length ? 'fora do horário' : d.date < today ? 'já passou' : d.t.freeMinutes ? html`<span class="free">${fmtDuration(d.t.freeMinutes)} livre</span>` : 'sem vagas'}</span></div>
           ${dayTapeByPeriod(d.t, d.windows, (e) => html`<div class="t-body">${examLine(e, { today })}</div>`, { holdHref: (e) => `/exames/${e.id}` })}
         </section>`)}</div>` : emptyState('Sem horário de exames nesta semana.')}`,
+    });
+  });
+
+  // Mapa semanal dos exames clínicos (secretariado e fora do circuito), para imprimir ou PDF.
+  // As avaliações de investigação não entram: só aparecem como tempo ocupado.
+  app.get('/agenda/mapa', async (req, reply) => {
+    const today = todayLocal();
+    const monday = mondayOf(isDate(str(req.query.semana)) ? str(req.query.semana) : today);
+    const end = addDays(monday, 7);
+    const exams = examsWhere(db, `e.status IN ('pendente','agendado','realizado','faltou') AND e.starts_at >= ? AND e.starts_at < ?`, [`${monday}T00:00`, `${end}T00:00`]);
+    const clinical = exams.filter((e) => e.source !== 'investigacao');
+    const availability = getSetting(db, 'availability');
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const date = addDays(monday, i);
+      const list = clinical.filter((e) => e.starts_at.startsWith(date));
+      const windows = availability.filter((w) => w.weekday === weekday(date)).sort((a, b) => a.start.localeCompare(b.start));
+      if (!list.length && !windows.length) continue;
+      const { t } = dayData(db, date, { exams: exams.filter((e) => e.starts_at.startsWith(date)), nowTime: date === today ? nowLocal().slice(11) : date < today ? '24:00' : null });
+      days.push({ date, list, windows, free: t.freeMinutes, research: exams.filter((e) => e.source === 'investigacao' && e.starts_at.startsWith(date)).length });
+    }
+    const n = clinical.filter((e) => e.status !== 'faltou').length;
+    const minutes = clinical.filter((e) => e.status !== 'faltou').reduce((a, e) => a + e.minutes, 0);
+    const pending = clinical.filter((e) => e.status === 'pendente').length;
+    const range = `${fmtDate(monday).slice(0, 5)} a ${fmtDate(addDays(monday, 6))}`;
+    return send(reply, req, {
+      title: `Mapa semanal ${range}`,
+      bare: true,
+      body: html`<div class="print-toolbar no-print">
+          <a class="btn ghost" href="/agenda?semana=${monday}">${icon('esq', 'ico sm')}Agenda</a>
+          <nav class="week-nav" aria-label="Semana"><a class="btn ghost" href="/agenda/mapa?semana=${addDays(monday, -7)}" aria-label="Semana anterior">${icon('esq', 'ico sm')}</a>
+            <span class="range">${range}</span>
+            <a class="btn ghost" href="/agenda/mapa?semana=${addDays(monday, 7)}" aria-label="Semana seguinte">${icon('dir', 'ico sm')}</a></nav>
+          <button class="btn primary" type="button" data-print>${icon('imprimir', 'ico sm')}Imprimir / Guardar PDF</button>
+        </div>
+        <div class="paper map">
+          <header class="map-h"><h1>Exames externos · semana de ${range}</h1>
+            <p>${n} ${n === 1 ? 'exame' : 'exames'} · ${fmtDuration(minutes)}${pending ? ` · ${pending} por confirmar` : ''} · emitido em ${fmtDateTime(nowLocal())}</p></header>
+          ${days.length ? html`<table class="map-t">
+            <thead><tr><th class="c-h">Hora</th><th>Ato / MCDT</th><th>Requisição</th><th>Processo</th><th>Reservado por</th><th>Estado</th></tr></thead>
+            ${days.map((d) => html`<tbody>
+              <tr class="map-day"><th colspan="6" scope="colgroup">${cap(fmtDateLong(d.date))}<span>${d.windows.length ? d.windows.map((w) => `${w.start}–${w.end}`).join(' · ') : 'fora do horário'}${d.windows.length && d.date >= today ? ` · ${d.free ? `${fmtDuration(d.free)} livre` : 'sem vagas'}` : ''}${d.research ? ` · ${d.research} ${d.research === 1 ? 'avaliação' : 'avaliações'} de investigação` : ''}</span></th></tr>
+              ${d.list.length ? d.list.map((e) => html`<tr class="s-${e.status}">
+                <td class="c-h mono">${e.starts_at.slice(11)}–${e.ends_at.slice(11)}</td>
+                <td>${e.type_name}${e.origin !== 'externo' ? html` <span class="muted">(${ORIGIN_LABEL[e.origin]}${e.project ? `: ${e.project}` : ''})</span>` : ''}</td>
+                <td class="mono nw">${e.requisition || '—'}</td>
+                <td class="mono nw">${e.patient_process || '—'}</td>
+                <td>${e.source === 'secretariado' ? e.booked_by_name || 'Secretariado' : 'Ortoptista'}</td>
+                <td>${e.change_kind ? (e.change_kind === 'mover' ? 'Alteração pedida' : 'Cancelamento pedido') : STATUS_LABEL[e.status]}</td></tr>`)
+                : html`<tr><td colspan="6" class="muted">Sem exames.</td></tr>`}
+            </tbody>`)}
+          </table>` : html`<p>Sem horário de exames nem exames nesta semana.</p>`}
+        </div>`,
     });
   });
 

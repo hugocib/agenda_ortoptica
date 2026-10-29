@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { html, raw } from '../html.js';
 import { audit } from '../db.js';
-import { createRequest, examsWhere, getRequest, listExamTypes, transitionExam, updatePatient } from '../repo.js';
+import { createRequest, examsWhere, getRequest, listExamTypes, setClinicalInfo, transitionExam, updatePatient } from '../repo.js';
 import { ORIGIN_LABEL } from '../domain/status.js';
 import { fmtDate, fmtDateTime, fmtUtcLocal, isDate, toIsoDate, todayLocal } from '../time.js';
 import { dateInput, emptyState, examLine, flash, originTag, pageHead, patientLabel, postButton, track, when } from '../ui.js';
@@ -16,6 +16,7 @@ const RequestSchema = z.object({
   referrer: z.string().trim().max(160, 'Demasiado longo.'),
   priority: z.enum(['normal', 'urgente']),
   notes: z.string().trim().max(2000, 'Notas demasiado longas.'),
+  clinical_info: z.string().trim().max(2000, 'Demasiado longo.'),
   requisition: z.string().trim().max(40, 'Demasiado longo.'),
 }).superRefine((v, ctx) => {
   if (v.origin !== 'externo' && !v.project) ctx.addIssue({ code: 'custom', path: ['project'], message: 'Indique o projeto ou estudo.' });
@@ -63,7 +64,8 @@ function newForm(req, types, values = {}, errors = {}) {
           <div class="seg" role="radiogroup" aria-label="Prioridade"><label><input type="radio" name="priority" value="normal"${v.priority !== 'urgente' ? html` checked` : ''}> Normal</label>
           <label class="urg"><input type="radio" name="priority" value="urgente"${v.priority === 'urgente' ? html` checked` : ''}> Urgente</label></div>
         </fieldset>
-        <label class="span2">Notas <span class="opt">sem dados clínicos desnecessários</span><textarea name="notes" rows="2" maxlength="2000">${v.notes || ''}</textarea>${err('notes')}</label>
+        <label class="span2">Informação clínica <span class="opt">suspeita ou observações do médico requisitante; sai no relatório</span><textarea name="clinical_info" rows="2" maxlength="2000">${v.clinical_info || ''}</textarea>${err('clinical_info')}</label>
+        <label class="span2">Notas <span class="opt">internas, não saem no relatório</span><textarea name="notes" rows="2" maxlength="2000">${v.notes || ''}</textarea>${err('notes')}</label>
         <div class="span2 form-actions sticky"><button class="btn primary big" type="submit">Criar pedido e escolher hora</button><a class="btn ghost" href="/hoje">Cancelar</a></div>
       </form>`,
   };
@@ -71,11 +73,13 @@ function newForm(req, types, values = {}, errors = {}) {
 
 export default async function requestRoutes(app, { db }) {
   app.get('/pedidos', async (req, reply) => {
-    const filtro = ['por_agendar', 'todos'].includes(req.query.f) ? req.query.f : 'por_agendar';
+    const filtro = ['por_agendar', 'investigacao', 'todos'].includes(req.query.f) ? req.query.f : 'por_agendar';
     const q = str(req.query.q).trim().slice(0, 60);
     let rows;
     if (q) {
       rows = examsWhere(db, '(r.patient_process LIKE ? OR r.patient_name LIKE ? OR r.project LIKE ? OR e.requisition LIKE ?)', [`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`], 'e.created_at DESC', 200);
+    } else if (filtro === 'investigacao') {
+      rows = examsWhere(db, "r.source = 'investigacao'", [], 'e.starts_at DESC', 200);
     } else if (filtro === 'por_agendar') {
       rows = examsWhere(db, "e.status = 'por_agendar'", [], "r.priority = 'urgente' DESC, e.created_at", 200);
     } else {
@@ -85,24 +89,25 @@ export default async function requestRoutes(app, { db }) {
     return send(reply, req, {
       title: 'Pedidos',
       active: 'pedidos',
-      body: html`${pageHead('Pedidos', { actions: html`<a class="btn primary" href="/pedidos/novo">Novo pedido</a>` })}
+      body: html`${pageHead('Pedidos', { actions: html`<a class="btn" href="/investigacao/nova">Nova avaliação de investigação</a><a class="btn primary" href="/pedidos/novo">Novo pedido</a>` })}
         ${flash(req.query, req)}
         <div class="toolbar">
-          <nav class="tabs" aria-label="Filtro"><a href="/pedidos?f=por_agendar" class="${!q && filtro === 'por_agendar' ? 'active' : ''}"${!q && filtro === 'por_agendar' ? raw(' aria-current="page"') : ''}>Por agendar</a><a href="/pedidos?f=todos" class="${!q && filtro === 'todos' ? 'active' : ''}"${!q && filtro === 'todos' ? raw(' aria-current="page"') : ''}>Todos <span class="muted small">últimos 200</span></a></nav>
-          <form method="get" action="/pedidos" class="search" role="search"><input type="search" name="q" value="${q}" placeholder="Requisição, processo ou nome" aria-label="Pesquisar por requisição, processo, nome ou projeto"><button class="btn" type="submit">Pesquisar</button></form>
+          <nav class="tabs" aria-label="Filtro"><a href="/pedidos?f=por_agendar" class="${!q && filtro === 'por_agendar' ? 'active' : ''}"${!q && filtro === 'por_agendar' ? raw(' aria-current="page"') : ''}>Por agendar</a><a href="/pedidos?f=investigacao" class="${!q && filtro === 'investigacao' ? 'active' : ''}"${!q && filtro === 'investigacao' ? raw(' aria-current="page"') : ''}>Investigação</a><a href="/pedidos?f=todos" class="${!q && filtro === 'todos' ? 'active' : ''}"${!q && filtro === 'todos' ? raw(' aria-current="page"') : ''}>Todos <span class="muted small">últimos 200</span></a></nav>
+          <form method="get" action="/pedidos" class="search" role="search"><input type="search" name="q" value="${q}" placeholder="Requisição, processo, nome, código ou projeto" aria-label="Pesquisar por requisição, processo, nome, código do participante ou projeto"><button class="btn" type="submit">Pesquisar</button></form>
         </div>
         ${q ? html`<p class="sec-note">${rows.length} ${rows.length === 1 ? 'resultado' : 'resultados'} para «${q}» · <a href="/pedidos">limpar pesquisa</a></p>` : ''}
         ${rows.length ? html`<table class="table rt">
           <thead><tr><th>Exame e doente</th><th>Percurso</th><th>Data</th><th>Origem do pedido</th><th></th></tr></thead>
           <tbody>${rows.map((e) => html`<tr class="s-${e.status}">
             <td class="main-cell"><a class="ex-title" href="/exames/${e.id}">${e.type_name}</a>${e.priority === 'urgente' && e.status === 'por_agendar' ? html` <span class="urgent">Urgente</span>` : ''}
-              <div class="ex-meta">${patientLabel(e)}${originTag(e.origin, e.project)}</div></td>
+              <div class="ex-meta">${patientLabel(e)}${originTag(e.origin, e.project, e.source)}</div></td>
             <td>${track(e, { today })}</td>
             <td><span class="when">${e.starts_at ? when(e) : ''}</span></td>
-            <td>${e.source === 'secretariado' ? html`<span class="small">Secretariado${e.booked_by_name ? ` · ${e.booked_by_name}` : ''}</span>` : html`<a href="/pedidos/${e.request_id}" class="mono">#${e.request_id}</a>`} <span class="muted small">${fmtDate(e.created_at)}</span></td>
+            <td>${e.source === 'secretariado' ? html`<span class="small">Secretariado${e.booked_by_name ? ` · ${e.booked_by_name}` : ''}</span>` : e.source === 'investigacao' ? html`<span class="small">Investigação</span>` : html`<a href="/pedidos/${e.request_id}" class="mono">#${e.request_id}</a>`} <span class="muted small">${fmtDate(e.created_at)}</span></td>
             <td class="right act">${e.status === 'por_agendar' ? html`<a class="btn primary" href="/exames/${e.id}/agendar">Agendar</a>` : ''}</td></tr>`)}</tbody></table>`
           : q ? emptyState(`Nenhum exame com «${q}».`, html`Procure pelo n.º de requisição, de processo, parte do nome ou do projeto.`)
-            : filtro === 'por_agendar' ? html`<p class="empty clear">Nada por agendar.</p>` : emptyState('Ainda não há pedidos.')}`,
+            : filtro === 'por_agendar' ? html`<p class="empty clear">Nada por agendar.</p>`
+              : filtro === 'investigacao' ? emptyState('Ainda não há avaliações de investigação.', html`<a class="btn primary" href="/investigacao/nova">Registar a primeira</a>`) : emptyState('Ainda não há pedidos.')}`,
     });
   });
 
@@ -110,7 +115,7 @@ export default async function requestRoutes(app, { db }) {
 
   app.post('/pedidos', async (req, reply) => {
     const body = req.body || {};
-    const values = Object.fromEntries(['patient_process', 'patient_name', 'birth_date', 'origin', 'project', 'referrer', 'priority', 'notes', 'requisition'].map((k) => [k, str(body[k])]));
+    const values = Object.fromEntries(['patient_process', 'patient_name', 'birth_date', 'origin', 'project', 'referrer', 'priority', 'notes', 'clinical_info', 'requisition'].map((k) => [k, str(body[k])]));
     values.birth_date = toIsoDate(values.birth_date);
     values.exam_type_id = arr(body.exam_type_id);
     const parsed = RequestSchema.safeParse(values);
@@ -133,13 +138,17 @@ export default async function requestRoutes(app, { db }) {
     const id = idParam(req);
     const r = id && getRequest(db, id);
     if (!r) return reply.callNotFound();
+    if (r.source === 'investigacao') {
+      const examId = db.prepare('SELECT id FROM exams WHERE request_id = ?').pluck().get(id);
+      return reply.redirect(`/exames/${examId}`);
+    }
     const exams = examsWhere(db, 'e.request_id = ?', [id], 'e.id');
     const back = `/pedidos/${id}`;
     const today = todayLocal();
     return send(reply, req, {
       title: `Pedido #${id}`,
       active: 'pedidos',
-      body: html`${pageHead(html`Pedido <span class="mono">#${id}</span>`, { back: { href: '/pedidos', label: 'Pedidos' }, sub: html`${patientLabel(r)}${originTag(r.origin, r.project)}${r.priority === 'urgente' ? html`<span class="urgent">Urgente</span>` : ''}` })}
+      body: html`${pageHead(html`Pedido <span class="mono">#${id}</span>`, { back: { href: '/pedidos', label: 'Pedidos' }, sub: html`${patientLabel(r)}${originTag(r.origin, r.project, r.source)}${r.priority === 'urgente' ? html`<span class="urgent">Urgente</span>` : ''}` })}
         ${flash(req.query, req)}
         <section class="sec">
           <div class="sec-h"><h2>Exames</h2><span class="count">${exams.length}</span></div>
@@ -159,7 +168,8 @@ export default async function requestRoutes(app, { db }) {
             <div><dt>Prioridade</dt><dd>${r.priority === 'urgente' ? 'Urgente' : 'Normal'}</dd></div>
             <div><dt>Criado</dt><dd>${fmtUtcLocal(r.created_at)} · ${r.created_by_name || r.booked_by_name || '—'}</dd></div>
           </dl>
-          ${r.notes ? html`<p class="notes">${r.notes}</p>` : ''}
+          ${r.clinical_info ? html`<h3 class="day-label">Informação clínica</h3><p class="notes">${r.clinical_info}</p>` : ''}
+          ${r.notes ? html`<h3 class="day-label">Notas</h3><p class="notes">${r.notes}</p>` : ''}
           ${exams.some((e) => ['por_agendar', 'agendado'].includes(e.status))
             ? html`<div class="more-actions">${postButton(`/pedidos/${id}/cancelar`, 'Cancelar exames pendentes deste pedido', { kind: 'danger', confirm: 'Cancelar todos os exames ainda não realizados deste pedido?' })}</div>` : ''}
         </section>`,
@@ -184,6 +194,15 @@ export default async function requestRoutes(app, { db }) {
     if (!parsed.success || (r.source === 'direto' && !parsed.data.patient_process)) return reply.redirect(`${back.split('?')[0]}?err=dados_invalidos`);
     updatePatient(db, req.user, id, { ...parsed.data, birth_date: parsed.data.birth_date || null });
     return reply.redirect(`${back.split('?')[0]}?msg=doente`);
+  });
+
+  app.post('/pedidos/:id/informacao-clinica', async (req, reply) => {
+    const id = idParam(req);
+    const r = id && getRequest(db, id);
+    if (!r || r.source === 'investigacao') return reply.callNotFound();
+    const back = safeBack(req.body?.back, `/pedidos/${id}`).split('?')[0];
+    setClinicalInfo(db, req.user, id, str(req.body?.clinical_info));
+    return reply.redirect(`${back}?msg=info_clinica`);
   });
 
   app.post('/pedidos/:id/cancelar', async (req, reply) => {

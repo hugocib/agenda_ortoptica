@@ -6,6 +6,8 @@
 //    realizado → relatório → executado no Siima. A marcação no Siima é feita pelo secretariado.
 //  - «direto» (fora do circuito): o ortoptista cria o pedido e faz o percurso todo no Siima:
 //    agendado → marcado no Siima → realizado → relatório → executado no Siima.
+//  - «investigacao»: avaliação de um participante de um projeto (só código do estudo), marcada a
+//    qualquer hora do horário de trabalho → realizada → ficha validada. Não passa pelo Siima.
 
 export const STATUS_LABEL = {
   pendente: 'Por confirmar',
@@ -26,6 +28,7 @@ export const ORIGIN_LABEL = {
 export const SOURCE_LABEL = {
   secretariado: 'Reserva do secretariado',
   direto: 'Fora do circuito',
+  investigacao: 'Avaliação de investigação',
 };
 
 // Estados que ocupam a agenda (uma reserva por confirmar já ocupa a vaga).
@@ -67,9 +70,15 @@ export const STATIONS = {
     { key: 'relatorio', label: 'Relatório validado' },
     { key: 'executado', label: 'Executado no Siima' },
   ],
+  investigacao: [
+    { key: 'agendado', label: 'Agendada' },
+    { key: 'realizado', label: 'Realizada' },
+    { key: 'relatorio', label: 'Ficha validada' },
+  ],
 };
 
-export const sourceOf = (e) => (e.source === 'secretariado' ? 'secretariado' : 'direto');
+export const sourceOf = (e) => (e.source === 'secretariado' || e.source === 'investigacao' ? e.source : 'direto');
+export const isResearch = (e) => e.source === 'investigacao';
 
 export function examTrack(e, today) {
   const s = e.status;
@@ -79,6 +88,7 @@ export function examTrack(e, today) {
   if (s === 'recusado') return { stations, states: stations.map((_, i) => (i === 0 ? 'fail' : 'off')), summary: 'Recusado', tone: 'fail' };
 
   const isPastOrToday = Boolean(e.starts_at && e.starts_at.slice(0, 10) <= today);
+  if (source === 'investigacao') return researchTrack(e, stations, isPastOrToday);
   const after = [
     s === 'realizado' ? 'done' : s === 'faltou' ? 'fail' : s === 'agendado' && isPastOrToday ? 'next' : 'todo',
     s === 'faltou' ? 'off' : e.report_status === 'validado' ? 'done' : s === 'realizado' ? (e.report_status === 'rascunho' ? 'draft' : 'next') : 'todo',
@@ -106,5 +116,22 @@ export function examTrack(e, today) {
     if (!e.siima_registered_at) missing.push('executar no Siima');
     if (!missing.length) { summary = 'Concluído'; tone = 'done'; } else summary = `Falta ${missing.join(' e ')}`;
   }
+  return { stations, states, summary, tone };
+}
+
+function researchTrack(e, stations, isPastOrToday) {
+  const s = e.status;
+  const states = [
+    e.starts_at && s !== 'por_agendar' ? 'done' : 'next',
+    s === 'realizado' ? 'done' : s === 'faltou' ? 'fail' : s === 'agendado' && isPastOrToday ? 'next' : 'todo',
+    s === 'faltou' ? 'off' : e.report_status === 'validado' ? 'done' : s === 'realizado' ? (e.report_status === 'rascunho' ? 'draft' : 'next') : 'todo',
+  ];
+  let summary;
+  let tone = 'pending';
+  if (s === 'por_agendar') summary = 'Por agendar';
+  else if (s === 'faltou') { summary = 'Faltou'; tone = 'fail'; } else if (s === 'agendado') {
+    if (isPastOrToday) summary = 'Por realizar';
+    else { summary = 'Agendada'; tone = 'quiet'; }
+  } else if (e.report_status === 'validado') { summary = 'Concluída'; tone = 'done'; } else summary = e.report_status === 'rascunho' ? 'Falta ficha (rascunho)' : 'Falta ficha';
   return { stations, states, summary, tone };
 }

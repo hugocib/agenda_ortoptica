@@ -20,7 +20,7 @@ function orthoActions(e, back = BACK) {
   return html`${e.status === 'agendado' ? html`${postButton(`/exames/${e.id}/realizado`, 'Realizado', { kind: 'primary', back })}${postButton(`/exames/${e.id}/faltou`, 'Faltou', { back, confirm: 'Registar falta?' })}` : ''}
     ${e.status === 'pendente' ? html`<a class="btn owed" href="#confirmar">Por confirmar</a>` : ''}
     ${reportLink(e)}
-    ${e.status === 'realizado' && !e.siima_registered_at ? postButton(`/exames/${e.id}/siima-registado`, 'Executado no Siima', { kind: 'owed', back: `${back}#siima` }) : ''}`;
+    ${e.status === 'realizado' && !e.siima_registered_at && e.source !== 'investigacao' ? postButton(`/exames/${e.id}/siima-registado`, 'Executado no Siima', { kind: 'owed', back: `${back}#siima` }) : ''}`;
 }
 
 export function dayData(db, date, { exams, nowTime = null }) {
@@ -39,10 +39,13 @@ export function dayData(db, date, { exams, nowTime = null }) {
 }
 
 function daySummary(exams, t) {
-  const n = exams.filter((e) => e.status !== 'faltou').length;
-  const parts = [n ? `${n} ${n === 1 ? 'exame' : 'exames'}` : 'Sem exames'];
+  const live = exams.filter((e) => e.status !== 'faltou');
+  const n = live.filter((e) => e.source !== 'investigacao').length;
+  const r = live.length - n;
+  const parts = [n ? `${n} ${n === 1 ? 'exame' : 'exames'}` : r ? '' : 'Sem exames'];
+  if (r) parts.push(`${r} ${r === 1 ? 'avaliação de investigação' : 'avaliações de investigação'}`);
   if (t.freeMinutes) parts.push(`${fmtDuration(t.freeMinutes)} livre`);
-  return parts.join(' · ');
+  return parts.filter(Boolean).join(' · ');
 }
 
 function owedLine(items) {
@@ -99,7 +102,7 @@ function orthoPage(req, db) {
   const todays = examsWhere(db, `e.status IN ${IN_SHOWN} AND e.starts_at >= ? AND e.starts_at < ?`, [`${today}T00:00`, `${addDays(today, 1)}T00:00`]);
   const inbox = examsWhere(db, "e.status = 'pendente' OR e.change_kind IS NOT NULL", [], 'e.change_requested_at IS NULL, COALESCE(e.change_requested_at, e.created_at)');
   const porFechar = examsWhere(db, "e.status = 'agendado' AND e.starts_at < ?", [`${today}T00:00`]);
-  const porRegistar = examsWhere(db, "e.status = 'realizado' AND e.siima_registered_at IS NULL", [], 'e.starts_at');
+  const porRegistar = examsWhere(db, "r.source <> 'investigacao' AND e.status = 'realizado' AND e.siima_registered_at IS NULL", [], 'e.starts_at');
   const porMarcar = examsWhere(db, "r.source = 'direto' AND e.status = 'agendado' AND e.siima_booked_at IS NULL", [], 'e.starts_at');
   const relatorios = examsWhere(db, "e.status = 'realizado' AND (rp.id IS NULL OR rp.status = 'rascunho')", [], 'e.starts_at');
   const proximos = examsWhere(db, "e.status IN ('agendado','pendente') AND e.starts_at >= ? AND e.starts_at < ?", [`${addDays(today, 1)}T00:00`, `${addDays(today, 8)}T00:00`]);
@@ -127,7 +130,7 @@ function orthoPage(req, db) {
       <div class="work">
         <div>
           <section class="sec" aria-labelledby="h-hoje">
-            <div class="sec-h"><h2 id="h-hoje">Agenda de hoje</h2><span class="aside"><a href="/agenda">Semana</a></span></div>
+            <div class="sec-h"><h2 id="h-hoje">Agenda de hoje</h2><span class="aside"><a href="/investigacao/nova">Registar avaliação de investigação</a> · <a href="/agenda">Semana</a></span></div>
             ${dayTapeByPeriod(t, windows, (e) => html`<div class="t-body">${examLine(e, { today, actions: orthoActions(e) })}</div>`, { emptyText: 'Sem exames nem horário hoje.', holdHref: (e) => `/exames/${e.id}` })}
           </section>
         </div>
@@ -164,7 +167,7 @@ function orthoPage(req, db) {
           <section class="sec quiet" aria-labelledby="h-prox">
             <div class="sec-h"><h2 id="h-prox">Próximos 7 dias</h2><span class="aside"><a href="/agenda">Ver agenda</a></span></div>
             ${proximos.length ? byDay(proximos, (e) => html`<div class="ex"><div class="ex-main"><span class="when">${e.starts_at.slice(11)}</span> <a class="ex-title" href="/exames/${e.id}">${e.type_name}</a>
-                <div class="ex-meta">${patientLabel(e)}${originTag(e.origin, e.project)}${e.status === 'pendente' ? html`<span class="owed-txt">por confirmar</span>` : ''}${e.source === 'direto' && !e.siima_booked_at ? html`<span class="owed-txt">por marcar no Siima</span>` : ''}</div></div></div>`)
+                <div class="ex-meta">${patientLabel(e)}${originTag(e.origin, e.project, e.source)}${e.status === 'pendente' ? html`<span class="owed-txt">por confirmar</span>` : ''}${e.source === 'direto' && !e.siima_booked_at ? html`<span class="owed-txt">por marcar no Siima</span>` : ''}</div></div></div>`)
               : emptyState('Nada agendado nos próximos 7 dias.')}
           </section>
         </div>

@@ -374,4 +374,25 @@
       });
     }
   }
+
+  // Logotipo dos relatórios: lê a imagem escolhida e envia-a como data URL.
+  var logoForm = document.querySelector('[data-logo-form]');
+  if (logoForm) {
+    var file = logoForm.querySelector('[data-logo-file]');
+    var note = logoForm.querySelector('[data-logo-name]');
+    file.addEventListener('change', function () {
+      var f = file.files && file.files[0];
+      if (!f) return;
+      if (!/^image\/(png|jpeg|webp|svg\+xml)$/.test(f.type) || f.size > 200 * 1024) {
+        note.textContent = 'Escolha uma imagem PNG, JPG, WebP ou SVG com até 200 KB (esta tem ' + Math.round(f.size / 1024) + ' KB).';
+        file.value = '';
+        return;
+      }
+      note.textContent = 'A carregar ' + f.name + '…';
+      var rd = new FileReader();
+      rd.onload = function () { logoForm.querySelector('input[name=logo]').value = rd.result; logoForm.submit(); };
+      rd.onerror = function () { note.textContent = 'Não foi possível ler o ficheiro.'; };
+      rd.readAsDataURL(f);
+    });
+  }
 })();

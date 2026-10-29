@@ -62,6 +62,11 @@ export const MESSAGES = {
   backup: 'Cópia de segurança criada.',
   tema: 'Tema aplicado a toda a app.',
   ics: 'Novo endereço do calendário criado. O anterior deixou de funcionar.',
+  avaliacao: 'Avaliação de investigação registada.',
+  avaliacao_alterada: 'Avaliação alterada.',
+  info_clinica: 'Informação clínica guardada.',
+  logo: 'Logotipo guardado. Aparece nos relatórios a partir de agora; os já validados não mudam.',
+  logo_removido: 'Logotipo removido.',
 };
 
 // Ações de um clique que podem ser desfeitas logo a seguir, a partir da mensagem de confirmação.
@@ -88,6 +93,8 @@ export const ERRORS = {
   relatorio_estado: 'O relatório só pode ser feito para exames realizados.',
   futuro: 'Ainda não chegou o dia deste exame: não pode ser marcado como realizado ou falta.',
   backup: 'Não foi possível criar a cópia de segurança. Veja os registos do servidor.',
+  tipo_com_ficha: 'A ficha desta avaliação já foi começada: o tipo de avaliação já não pode mudar.',
+  logo_invalido: 'O logotipo tem de ser uma imagem PNG, JPG, WebP ou SVG com até 200 KB.',
 };
 
 /** Caminho atual sem msg/err/u, para o «desfazer» voltar ao mesmo sítio. */
@@ -196,7 +203,8 @@ export function statusPill(status) {
 }
 
 /** Origem só aparece quando não é externo (o caso normal). */
-export function originTag(origin, project) {
+export function originTag(origin, project, source = '') {
+  if (source === 'investigacao') return html`<span class="origin o-invest">Investigação${project ? html` <b>${project}</b>` : ''}</span>`;
   if (origin === 'externo') return '';
   return html`<span class="origin o-${origin}">${ORIGIN_LABEL[origin] === 'Projeto interno' ? 'Projeto' : 'Ensaio'}${project ? html` <b>${project}</b>` : ''}</span>`;
 }
@@ -207,6 +215,7 @@ export function proc(v) {
 
 /** Identificação numa linha: requisição do Siima, processo e nome (o que existir). */
 export function patientLabel(e) {
+  if (e.source === 'investigacao') return html`<span class="part" title="Código do participante"><span class="req-l">Part.</span> ${e.patient_process}</span>`;
   const req = e.requisition ? html`<span class="req" title="N.º de requisição"><span class="req-l">Req.</span> ${e.requisition}</span>` : '';
   if (!e.patient_process && !e.patient_name) {
     return html`${req}${e.source === 'secretariado' && e.status === 'realizado' ? html`<span class="unid">doente por identificar</span>` : ''}`;
@@ -286,7 +295,7 @@ export function examLine(e, { actions = '', today = todayLocal(), when: showWhen
   return html`<div class="ex">
     <div class="ex-main">
       ${showWhen && e.starts_at ? html`<span class="when">${fmtDate(e.starts_at).slice(0, 5)} ${e.starts_at.slice(11)}</span> ` : ''}<a class="ex-title" href="${href}">${e.type_name}</a>
-      <div class="ex-meta">${patientLabel(e)}${originTag(e.origin, e.project)}${e.source === 'secretariado' && e.booked_by_name ? html`<span class="by">por ${e.booked_by_name}</span>` : ''}${e.priority === 'urgente' && e.status === 'por_agendar' ? html`<span class="urgent">Urgente</span>` : ''}</div>
+      <div class="ex-meta">${patientLabel(e)}${originTag(e.origin, e.project, e.source)}${e.source === 'secretariado' && e.booked_by_name ? html`<span class="by">por ${e.booked_by_name}</span>` : ''}${e.priority === 'urgente' && e.status === 'por_agendar' ? html`<span class="urgent">Urgente</span>` : ''}</div>
       ${trackOn ? html`<div class="ex-state">${track(e, { today })}</div>` : ''}
     </div>
     ${actions ? html`<div class="ex-actions">${actions}</div>` : ''}

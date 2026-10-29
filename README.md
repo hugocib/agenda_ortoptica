@@ -65,19 +65,26 @@ Com HTTPS (Nginx Proxy Manager com certificado), a app instala-se como app, os b
    - **Frase de técnica:** `{chave}` é substituído pelo valor do campo e o que está entre `[ ]` só aparece se os campos lá dentro estiverem preenchidos. Ex.: `Exame realizado segundo o padrão ISCEV[, com elétrodos {eletrodos}].` A ficha mostra um exemplo da frase enquanto a escreve.
    - Relatórios já validados nunca mudam. Os rascunhos passam a usar a ficha nova (a app avisa antes de apagar um parâmetro que tenha valores em rascunhos).
 5. **A minha conta → Aspeto:** escolha um dos 12 temas (cor, letra e forma) e o modo claro/escuro de cada dispositivo.
-6. **Administração → Sistema → Calendário (ICS):** pode subscrever o endereço no Outlook para ver os exames no seu calendário (as reservas por confirmar aparecem como «[por confirmar]»). O calendário não mostra dados de doentes.
+6. **Administração → Sistema → Relatórios:** cabeçalho, assinatura e **logotipo** (PNG, JPG, WebP ou SVG até 200 KB; aparece no canto do cabeçalho de cada relatório). Os relatórios já validados ficam com o cabeçalho e o logotipo que tinham.
+7. **Administração → Sistema → Calendário (ICS):** pode subscrever o endereço no Outlook para ver os exames no seu calendário (as reservas por confirmar aparecem como «[por confirmar]»). O calendário não mostra dados de doentes.
 
-### Os dois circuitos
+### Os três circuitos
 ```
 Secretariado (link):  Reserva por confirmar ─► Confirmado (ortoptista, com n.º de requisição)
                       ─► Realizado / Faltou ─► Relatório validado ─► Executado no Siima
 
 Fora do circuito:     Pedido (ortoptista) ─► Agendado ─► Marcado no Siima
                       ─► Realizado / Faltou ─► Relatório validado ─► Executado no Siima
+
+Investigação:         Avaliação (ortoptista, qualquer hora) ─► Realizada / Faltou ─► Ficha validada
 ```
 - Uma reserva **por confirmar já ocupa a vaga**. O ortoptista confirma (o n.º de requisição tem de estar preenchido nesse momento) ou recusa com um motivo, que o secretariado vê no link.
 - Enquanto está por confirmar, o secretariado pode mudar a hora ou anular diretamente. Depois de confirmada, só pode **pedir** a alteração ou o cancelamento: a hora proposta fica reservada até o ortoptista aceitar ou recusar, e até lá mantém-se a hora atual.
 - As reservas chegam sem identificação do doente. Para validar o relatório, o ortoptista identifica o doente (n.º de processo ou nome) na página do exame; o relatório mostra também o n.º de requisição.
+
+- **Informação clínica:** a suspeita ou as observações do médico requisitante. Preenche-se no pedido (ou na página do exame, para as reservas do secretariado) e sai no relatório, antes da técnica. Não é pedida no link do secretariado, que continua sem dados de doentes.
+- **Avaliações de investigação** (*Pedidos → Nova avaliação de investigação*, ou *Hoje → Registar avaliação*): o participante fica identificado só pelo **código do estudo** e pelo projeto, sem nome nem data de nascimento. Marcam-se a qualquer hora do horário de trabalho (também fora das manhãs de exames externos, ou depois de feitas) e não passam pelo Siima. Se calharem numa hora do horário de exames externos, essa hora deixa de aparecer livre no link do secretariado (que não mostra nada da avaliação). Os tipos de avaliação, cada um com a sua ficha de resultados, estão em *Administração → Atos / MCDTs → Avaliações de investigação*. A estatística mostra-as à parte (por projeto e por tipo: realizadas, participantes, horas, faltas e fichas validadas), sem entrar nos números dos exames clínicos.
+- **Mapa semanal** (*Agenda → Mapa semanal*): os exames clínicos da semana por dia e hora, com ato, n.º de requisição, processo, quem reservou e estado, pronto a imprimir ou guardar em PDF (A4 horizontal). As avaliações de investigação contam só como tempo ocupado.
 
 Cada passo tem um botão. O que falta fazer aparece em «Hoje», com contador no menu.
 

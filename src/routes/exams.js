@@ -1,7 +1,7 @@
 import { html, raw } from '../html.js';
 import { getSetting } from '../db.js';
 import {
-  confirmReservation, decideChange, getExam, scheduleContext, scheduleExam, setRequisition, setSiimaBooked, setSiimaRegistered, transitionExam,
+  confirmReservation, decideChange, getExam, scheduleContext, scheduleExam, setClinicalInfo, setRequisition, setSiimaBooked, setSiimaRegistered, transitionExam,
 } from '../repo.js';
 import { freeSlots, roundUp } from '../domain/slots.js';
 import { canTransition, examTrack, ORIGIN_LABEL, SOURCE_LABEL, sourceOf } from '../domain/status.js';
@@ -43,7 +43,10 @@ export default async function examRoutes(app, { db }) {
       act: html`${e.siima_registered_at ? postButton(`/exames/${id}/siima-registado/desfazer`, 'desfazer', { kind: 'link', back }) : ''}${e.status === 'realizado' && !e.siima_registered_at ? postButton(`/exames/${id}/siima-registado`, 'Executado no Siima', { kind: 'owed', back }) : ''}`,
     };
     // Cada estação: quando aconteceu e o botão que a faz avançar (ou desfaz).
-    const stopInfo = source === 'secretariado'
+    const research = source === 'investigacao';
+    const stopInfo = research
+      ? [{ meta: slotMeta, act: can('reagendar') ? html`<a class="btn" href="/investigacao/${id}/editar">Alterar</a>` : '' }, performed, report]
+      : source === 'secretariado'
       ? [{ meta: e.confirmed_at ? fmtUtcLocal(e.confirmed_at) : e.status === 'pendente' ? 'reserva por confirmar' : e.status === 'recusado' ? 'recusada' : '', act: '' }, performed, report, executed]
       : [
         { meta: slotMeta, act: html`${can('agendar') ? html`<a class="btn primary" href="/exames/${id}/agendar">Agendar</a>` : ''}${can('reagendar') ? html`<a class="btn" href="/exames/${id}/agendar">Reagendar</a>` : ''}` },
@@ -55,15 +58,32 @@ export default async function examRoutes(app, { db }) {
     const secondary = html`${source === 'secretariado' && can('reagendar') ? html`<a class="btn" href="/exames/${id}/agendar">Mudar a hora</a>` : ''}
       ${can('desmarcar') ? postButton(`/exames/${id}/desmarcar`, 'Desmarcar', { back, confirm: 'Remover a marcação? (lembre-se de desmarcar também no Siima)' }) : ''}
       ${can('anular_realizado') && !e.siima_registered_at ? postButton(`/exames/${id}/anular_realizado`, 'Anular «realizado»', { back, confirm: 'Voltar a pôr o exame como agendado?' }) : ''}
-      ${can('cancelar') ? postButton(`/exames/${id}/cancelar`, 'Cancelar exame', { kind: 'danger', back, confirm: source === 'secretariado' ? 'Cancelar este exame? O secretariado vê a reserva como cancelada.' : 'Cancelar este exame?' }) : ''}`;
-    const needsId = !e.patient_process && !e.patient_name && e.status === 'realizado';
+      ${can('cancelar') ? postButton(`/exames/${id}/cancelar`, research ? 'Cancelar avaliação' : 'Cancelar exame', { kind: 'danger', back, confirm: source === 'secretariado' ? 'Cancelar este exame? O secretariado vê a reserva como cancelada.' : research ? 'Cancelar esta avaliação?' : 'Cancelar este exame?' }) : ''}`;
+    const needsId = !research && !e.patient_process && !e.patient_name && e.status === 'realizado';
+    const clinicalBox = research ? '' : html`<details class="edit-box"><summary>${e.clinical_info ? 'Alterar informação clínica' : 'Indicar informação clínica do requisitante'}</summary>
+      <form method="post" action="/pedidos/${e.request_id}/informacao-clinica" class="stack">
+        <input type="hidden" name="back" value="${back}">
+        <label>Informação clínica <span class="opt">suspeita ou observações do médico requisitante; sai no relatório</span><textarea name="clinical_info" rows="3" maxlength="2000">${e.clinical_info}</textarea></label>
+        <div><button class="btn primary" type="submit">Guardar</button></div>
+      </form></details>`;
+    const dataBox = research
+      ? html`<dl class="facts">
+          <div><dt>Data</dt><dd>${when(e)}${e.ends_at ? `–${e.ends_at.slice(11)}` : ''}</dd></div>
+          <div><dt>Duração</dt><dd>${e.minutes} min</dd></div>
+          <div><dt>Participante</dt><dd>${copyable(e.patient_process, 'código do participante')}</dd></div>
+          <div><dt>Projeto</dt><dd>${e.project}</dd></div>
+        </dl>
+        ${e.notes ? html`<h3 class="day-label">Notas</h3><p class="notes">${e.notes}</p>` : ''}
+        ${!['cancelado', 'recusado'].includes(e.status) ? html`<p><a class="btn" href="/investigacao/${id}/editar">Alterar dados, dia ou hora</a></p>` : ''}`
+      : null;
 
     return send(reply, req, {
       title: e.type_name,
-      active: source === 'direto' ? 'pedidos' : 'agenda',
+      active: source === 'secretariado' ? 'agenda' : 'pedidos',
       body: html`${pageHead(e.type_name, {
-          back: source === 'direto' ? { href: `/pedidos/${e.request_id}`, label: html`Pedido <span class="mono">#${e.request_id}</span>` } : { href: '/hoje', label: 'Hoje' },
-          sub: html`${e.starts_at ? html`<span class="sub-when">${cap(fmtDateLong(e.starts_at.slice(0, 10)))} · <span class="mono">${e.starts_at.slice(11)}</span></span>` : ''}${patientLabel(e)}${originTag(e.origin, e.project)}<span class="track-wrap tone-${t.tone}"><span class="track-label">${t.summary}</span></span>`,
+          back: source === 'direto' ? { href: `/pedidos/${e.request_id}`, label: html`Pedido <span class="mono">#${e.request_id}</span>` }
+            : research ? { href: '/pedidos?f=investigacao', label: 'Investigação' } : { href: '/hoje', label: 'Hoje' },
+          sub: html`${e.starts_at ? html`<span class="sub-when">${cap(fmtDateLong(e.starts_at.slice(0, 10)))} · <span class="mono">${e.starts_at.slice(11)}</span></span>` : ''}${patientLabel(e)}${originTag(e.origin, e.project, e.source)}<span class="track-wrap tone-${t.tone}"><span class="track-label">${t.summary}</span></span>`,
         })}
         ${flash(req.query, req)}
         ${e.status === 'pendente' || e.change_kind ? html`<section class="sec inbox" id="confirmar"><div class="sec-h"><h2>${e.change_kind ? 'Pedido do secretariado' : 'Reserva por confirmar'}</h2></div>
@@ -80,9 +100,9 @@ export default async function examRoutes(app, { db }) {
           ${String(secondary).trim() ? html`<div class="more-actions"><span class="lead">Outras ações</span>${secondary}</div>` : ''}
         </section>
         <div class="two-col">
-          <section class="sec quiet">
+          <section class="sec quiet" id="dados">
             <div class="sec-h"><h2>Dados</h2></div>
-            <dl class="facts">
+            ${dataBox || html`<dl class="facts">
               <div><dt>Data</dt><dd>${when(e)}${e.ends_at ? `–${e.ends_at.slice(11)}` : ''}</dd></div>
               <div><dt>Duração</dt><dd>${e.minutes} min</dd></div>
               <div><dt>Requisição</dt><dd>${e.requisition ? copyable(e.requisition, 'requisição') : html`<span class="owed-txt">sem requisição</span>`}</dd></div>
@@ -90,6 +110,7 @@ export default async function examRoutes(app, { db }) {
               <div><dt>Origem</dt><dd>${ORIGIN_LABEL[e.origin]}${e.project ? ` — ${e.project}` : ''}</dd></div>
               ${e.referrer ? html`<div><dt>Requisitante</dt><dd>${e.referrer}</dd></div>` : ''}
             </dl>
+            ${e.clinical_info ? html`<h3 class="day-label">Informação clínica</h3><p class="notes">${e.clinical_info}</p>` : ''}
             ${e.notes ? html`<h3 class="day-label">Notas do pedido</h3><p class="notes">${e.notes}</p>` : ''}
             ${!['cancelado', 'recusado'].includes(e.status) ? html`<details class="edit-box"${e.requisition ? '' : raw(' open')}><summary>${e.requisition ? 'Alterar n.º de requisição' : 'Indicar n.º de requisição'}</summary>
               <form method="post" action="/exames/${id}/requisicao" class="toolbar inline-edit">
@@ -108,6 +129,7 @@ export default async function examRoutes(app, { db }) {
                 </div>
                 <div><button class="btn primary" type="submit">Guardar identificação</button></div>
               </form></details>
+            ${clinicalBox}`}
           </section>
           <section class="sec quiet">
             <div class="sec-h"><h2>Histórico</h2></div>
@@ -124,6 +146,7 @@ export default async function examRoutes(app, { db }) {
     const id = idParam(req);
     const e = id && getExam(db, id);
     if (!e) return reply.callNotFound();
+    if (e.source === 'investigacao') return reply.redirect(`/investigacao/${id}/editar`);
     if (!['por_agendar', 'agendado', 'pendente'].includes(e.status)) return reply.redirect(`/exames/${id}?err=estado`);
     const today = todayLocal();
     const weeks = getSetting(db, 'horizon_weeks');
@@ -137,7 +160,7 @@ export default async function examRoutes(app, { db }) {
       active: direct ? 'pedidos' : 'agenda',
       body: html`${pageHead(html`${e.status === 'por_agendar' ? 'Escolher hora' : 'Mudar a hora'}`, { back: { href: `/exames/${id}`, label: e.type_name } })}
         ${flash(req.query, req)}
-        <div class="ctx"><span class="ex-title">${e.type_name}</span><span>${patientLabel(e)}</span>${originTag(e.origin, e.project)}
+        <div class="ctx"><span class="ex-title">${e.type_name}</span><span>${patientLabel(e)}</span>${originTag(e.origin, e.project, e.source)}
           <span class="muted">ocupa <strong>${roundUp(e.minutes, ctx.step)} min</strong>${ctx.maxPerDay[e.exam_type_id] ? ` · máx. ${ctx.maxPerDay[e.exam_type_id]} por dia` : ''}</span></div>
         ${e.starts_at ? html`<div class="notice warn"><p>Está marcado para <strong>${when(e)}</strong>.${direct ? ' Ao escolher outra hora, desmarque também a antiga no Siima.' : ' O secretariado vê a nova hora no link de reservas; a marcação no Siima é com elas.'}</p></div>` : ''}
         ${withTimes.length ? html`<form method="post" action="/exames/${id}/agendar">

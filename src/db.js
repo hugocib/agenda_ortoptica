@@ -69,6 +69,9 @@ export const DEFAULT_EXAM_TYPES = [
   ['aval_visual', 'Avaliação visual completa (participante)', 60, 0, 'ortoptica'],
 ];
 
+// Avaliações de investigação (não aparecem no link do secretariado nem nos pedidos clínicos).
+export const RESEARCH_CODES = new Set(['refracao_fmri', 'aval_visual']);
+
 export const DEFAULT_SETTINGS = {
   // weekday: 1 = segunda ... 5 = sexta
   // Manhã e tarde são janelas separadas; o intervalo entre elas é o almoço (nunca tem vagas).
@@ -87,15 +90,17 @@ export const DEFAULT_SETTINGS = {
   booking_theme: 'laboratorio',
   // Nomes de quem reserva pelo link do secretariado (lista curta, escolhida ao reservar).
   booking_names: [],
+  // Logotipo dos relatórios (data URL; vazio = sem logotipo).
+  report_logo: '',
 };
 
 export function seed(db) {
   const count = db.prepare('SELECT COUNT(*) FROM exam_types').pluck().get();
   if (count === 0) {
-    const ins = db.prepare(`INSERT INTO exam_types (code, name, minutes, is_electro, report_template, sort, max_per_day)
-      VALUES (?, ?, ?, ?, ?, ?, ?)`);
+    const ins = db.prepare(`INSERT INTO exam_types (code, name, minutes, is_electro, report_template, sort, max_per_day, kind)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
     // Eletrofisiologia: no máximo 2 de cada por dia (editável em Atos / MCDTs).
-    db.transaction(() => DEFAULT_EXAM_TYPES.forEach((t, i) => ins.run(...t, i, t[3] ? 2 : null)))();
+    db.transaction(() => DEFAULT_EXAM_TYPES.forEach((t, i) => ins.run(...t, i, t[3] ? 2 : null, RESEARCH_CODES.has(t[0]) ? 'investigacao' : 'clinico')))();
   }
   const insSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) insSetting.run(k, JSON.stringify(v));

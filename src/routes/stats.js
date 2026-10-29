@@ -1,7 +1,7 @@
 // Estatística de execução: quanto se fez, quanto faltou, como se usou a agenda e quanto tempo
 // demora cada passo. Sem valores financeiros (a faturação é do secretariado).
 import { html, raw } from '../html.js';
-import { emptyState, pageHead } from '../ui.js';
+import { emptyState, help, pageHead } from '../ui.js';
 import { getSetting } from '../db.js';
 import { capacityMinutes } from '../domain/slots.js';
 import { ORIGIN_LABEL, SOURCE_LABEL, STATUS_LABEL } from '../domain/status.js';
@@ -33,7 +33,7 @@ export function computeStats(db, year, month) {
   const { from, to } = range(year, month);
   const rows = db.prepare(`SELECT e.*, t.name AS type_name, t.sort, r.origin, r.source, r.project, rp.status AS report_status, rp.validated_at
     FROM exams e JOIN exam_types t ON t.id = e.exam_type_id JOIN requests r ON r.id = e.request_id LEFT JOIN reports rp ON rp.exam_id = e.id
-    WHERE e.starts_at >= ? AND e.starts_at < ?`).all(`${from}T00:00`, `${to}T00:00`);
+    WHERE e.starts_at >= ? AND e.starts_at < ? AND r.source <> 'investigacao'`).all(`${from}T00:00`, `${to}T00:00`);
   const byType = new Map();
   const blank = () => ({ realizados: 0, faltas: 0, agendados: 0, cancelados: 0, recusados: 0, executados: 0, porExecutar: 0, relatorios: 0, minutos: 0 });
   const totals = blank();
@@ -63,7 +63,8 @@ export function computeStats(db, year, month) {
   }
   // Ocupação: só o período já decorrido e desde que a app começou a ser usada; senão um ano
   // inteiro com 2 meses de uso daria uma percentagem enganadora.
-  const firstUse = db.prepare('SELECT MIN(substr(starts_at, 1, 10)) FROM exams WHERE starts_at IS NOT NULL').pluck().get();
+  const firstUse = db.prepare(`SELECT MIN(substr(e.starts_at, 1, 10)) FROM exams e JOIN requests r ON r.id = e.request_id
+    WHERE e.starts_at IS NOT NULL AND r.source <> 'investigacao'`).pluck().get();
   const capFrom = firstUse && firstUse > from ? firstUse : from;
   const tomorrow = addDays(todayLocal(), 1);
   const capTo = tomorrow < to ? tomorrow : to;
@@ -75,6 +76,52 @@ export function computeStats(db, year, month) {
     projects: [...projects.entries()].map(([project, n]) => ({ project, n })).sort((a, b) => b.n - a.n),
     medians: { wait: median(wait), report: median(toReport), siima: median(toSiima) },
   };
+}
+
+/** Avaliações de investigação: por projeto e por tipo (realizadas, faltas, horas, fichas validadas). */
+export function computeResearch(db, year, month) {
+  const { from, to } = range(year, month);
+  const rows = db.prepare(`SELECT e.status, e.minutes, t.name AS type_name, t.sort, r.project, r.patient_process, rp.status AS report_status
+    FROM exams e JOIN exam_types t ON t.id = e.exam_type_id JOIN requests r ON r.id = e.request_id LEFT JOIN reports rp ON rp.exam_id = e.id
+    WHERE r.source = 'investigacao' AND e.starts_at >= ? AND e.starts_at < ? AND e.status IN ('agendado','realizado','faltou')`).all(`${from}T00:00`, `${to}T00:00`);
+  const blank = () => ({ realizadas: 0, faltas: 0, agendadas: 0, minutos: 0, fichas: 0, participantes: new Set() });
+  const totals = blank();
+  const byProject = new Map();
+  const byType = new Map();
+  for (const e of rows) {
+    if (!byProject.has(e.project)) byProject.set(e.project, { name: e.project, ...blank() });
+    if (!byType.has(e.type_name)) byType.set(e.type_name, { name: e.type_name, sort: e.sort, ...blank() });
+    for (const g of [totals, byProject.get(e.project), byType.get(e.type_name)]) {
+      if (e.status === 'realizado') {
+        g.realizadas++; g.minutos += e.minutes; g.participantes.add(`${e.project}|${e.patient_process}`);
+        if (e.report_status === 'validado') g.fichas++;
+      } else if (e.status === 'faltou') g.faltas++;
+      else g.agendadas++;
+    }
+  }
+  const out = (g) => ({ ...g, participantes: g.participantes.size });
+  return {
+    totals: out(totals),
+    byProject: [...byProject.values()].map(out).sort((a, b) => b.realizadas - a.realizadas || a.name.localeCompare(b.name)),
+    byType: [...byType.values()].map(out).sort((a, b) => a.sort - b.sort),
+  };
+}
+
+const hours = (min) => (min / 60).toFixed(1).replace('.', ',');
+
+function researchSection(r, period) {
+  const t = r.totals;
+  if (!t.realizadas && !t.faltas && !t.agendadas) {
+    return html`<section class="sec" id="investigacao"><div class="sec-h"><h2>Investigação</h2></div>${emptyState(`Sem avaliações de investigação em ${period}.`, html`<a href="/investigacao/nova">Registar uma avaliação</a>`)}</section>`;
+  }
+  const table = (rows, label) => html`<div class="scroll-x"><table class="table num-table"><thead><tr><th>${label}</th><th>Realizadas</th><th>Participantes</th><th>Horas</th><th>Faltas</th><th>Fichas validadas</th></tr></thead>
+    <tbody>${rows.map((g) => html`<tr><td>${g.name}</td><td>${g.realizadas}</td><td>${g.participantes}</td><td>${hours(g.minutos)}</td><td>${g.faltas}</td><td>${g.fichas}/${g.realizadas}</td></tr>`)}</tbody>
+    ${rows.length > 1 ? html`<tfoot><tr><td>Total</td><td>${t.realizadas}</td><td>${t.participantes}</td><td>${hours(t.minutos)}</td><td>${t.faltas}</td><td>${t.fichas}/${t.realizadas}</td></tr></tfoot>` : ''}</table></div>`;
+  return html`<section class="sec" id="investigacao"><div class="sec-h"><h2>Investigação</h2>${help('Avaliações de participantes de projetos (circuito de investigação, fora do Siima). Participantes = códigos diferentes com pelo menos uma avaliação realizada no período. Não entram nos números de exames clínicos acima.')}
+      <span class="aside">${t.realizadas} ${t.realizadas === 1 ? 'avaliação realizada' : 'avaliações realizadas'} · ${hours(t.minutos)} h${t.agendadas ? ` · ${t.agendadas} por realizar` : ''}</span></div>
+    <h3 class="day-label">Por projeto</h3>${table(r.byProject, 'Projeto')}
+    <h3 class="day-label">Por tipo de avaliação</h3>${table(r.byType, 'Avaliação')}
+  </section>`;
 }
 
 function csvCell(v) {
@@ -92,6 +139,7 @@ export default async function statsRoutes(app, { db }) {
     const monthQ = Number.parseInt(str(req.query.mes), 10);
     const month = monthQ >= 1 && monthQ <= 12 ? monthQ : null;
     const s = computeStats(db, year, month);
+    const research = computeResearch(db, year, month);
     const t = s.totals;
     const label = month ? `${monthName(month)} de ${year}` : String(year);
     const months = [];
@@ -116,7 +164,7 @@ export default async function statsRoutes(app, { db }) {
           ${month ? html`<a href="/estatistica?ano=${year}">Ver o ano todo</a>` : ''}
         </form>
         <dl class="ledger">
-          <div><dt>Exames realizados</dt><dd>${t.realizados}<small>${Math.round(t.minutos / 60)} h de exames</small></dd></div>
+          <div><dt>Exames clínicos realizados</dt><dd>${t.realizados}<small>${Math.round(t.minutos / 60)} h de exames</small></dd></div>
           <div><dt>Ocupação da agenda</dt><dd>${pct(t.minutos, s.capacity)}<small>até hoje, sobre ${Math.round(s.capacity / 60)} h de horário</small></dd></div>
           <div><dt>Taxa de faltas</dt><dd>${pct(t.faltas, fechados)}<small>${t.faltas} ${t.faltas === 1 ? 'falta' : 'faltas'} · ${t.cancelados} ${t.cancelados === 1 ? 'cancelado' : 'cancelados'}</small></dd></div>
           <div><dt>Espera até ao exame</dt><dd>${fmtDays(s.medians.wait)}<small>mediana, da reserva ao dia do exame</small></dd></div>
@@ -142,6 +190,7 @@ export default async function statsRoutes(app, { db }) {
           <tbody>${months.map((m) => html`<tr><td><a href="/estatistica?ano=${year}&mes=${m.m}">${monthName(m.m)}</a></td><td>${m.realizados}</td>
             <td class="td-bar hide-m">${raw(`<svg class="bar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><rect class="cap" width="100" height="8"/><rect width="${maxM ? Math.round((m.realizados / maxM) * 100) : 0}" height="8"/></svg>`)}</td>
             <td>${m.faltas}</td><td>${m.cancelados + m.recusados}</td><td>${pct(m.minutos, m.capacity)}</td></tr>`)}</tbody></table></div></section>` : ''}
+        ${researchSection(research, label)}
         <p class="muted small">Ocupação = horas de exames realizados sobre as horas do horário de exames no período já decorrido. Medianas calculadas sobre os exames realizados do período.</p>`,
     });
   });
@@ -156,12 +205,12 @@ export default async function statsRoutes(app, { db }) {
         e.minutes, e.siima_booked_at, e.siima_registered_at, rp.status AS relatorio
       FROM exams e JOIN exam_types t ON t.id = e.exam_type_id JOIN requests r ON r.id = e.request_id LEFT JOIN reports rp ON rp.exam_id = e.id
       WHERE e.starts_at >= ? AND e.starts_at < ? ORDER BY e.starts_at`).all(`${from}T00:00`, `${to}T00:00`);
-    const header = ['id', 'data', 'hora', 'exame', 'circuito', 'origem', 'projeto', 'requisicao', 'processo', 'estado', 'minutos', 'marcado_siima', 'executado_siima', 'relatorio'];
+    const header = ['id', 'data', 'hora', 'exame', 'circuito', 'origem', 'projeto', 'requisicao', 'processo_ou_codigo', 'estado', 'minutos', 'marcado_siima', 'executado_siima', 'relatorio'];
     const lines = [header.join(';')];
     for (const r of rows) {
       lines.push([r.id, r.starts_at.slice(0, 10), r.starts_at.slice(11), r.exame, SOURCE_LABEL[r.source], ORIGIN_LABEL[r.origin], r.project, r.requisition, r.patient_process,
         STATUS_LABEL[r.status], r.minutes, r.source === 'direto' ? (r.siima_booked_at ? 'sim' : 'não') : '',
-        r.siima_registered_at ? 'sim' : 'não', r.relatorio || ''].map(csvCell).join(';'));
+        r.source === 'investigacao' ? '' : r.siima_registered_at ? 'sim' : 'não', r.relatorio || ''].map(csvCell).join(';'));
     }
     const name = `exames-${year}${month ? `-${pad(month)}` : ''}.csv`;
     // BOM UTF-8 + ponto e vírgula: abre corretamente no Excel em português.

@@ -22,6 +22,7 @@ import todayRoutes from './routes/today.js';
 import requestRoutes from './routes/requests.js';
 import examRoutes from './routes/exams.js';
 import reportRoutes from './routes/reports.js';
+import researchRoutes from './routes/research.js';
 import agendaRoutes from './routes/agenda.js';
 import statsRoutes from './routes/stats.js';
 import adminRoutes from './routes/admin.js';
@@ -125,7 +126,7 @@ export async function buildApp({ db, config = defaultConfig, logger = true } = {
     }));
   });
 
-  for (const r of [lookRoutes, bookingRoutes, pushRoutes, authRoutes, todayRoutes, requestRoutes, examRoutes, reportRoutes, agendaRoutes, statsRoutes, adminRoutes, miscRoutes]) {
+  for (const r of [lookRoutes, bookingRoutes, pushRoutes, authRoutes, todayRoutes, requestRoutes, examRoutes, reportRoutes, researchRoutes, agendaRoutes, statsRoutes, adminRoutes, miscRoutes]) {
     await app.register(r, deps);
   }
   return app;

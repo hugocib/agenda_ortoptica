@@ -9,6 +9,7 @@ export const REASONS = {
   bloqueado: 'Esse período está bloqueado.',
   limite_dia: 'Já há o máximo de exames deste tipo nesse dia.',
   desalinhado: 'A hora de início tem de coincidir com a grelha da agenda.',
+  dia_seguinte: 'A avaliação tem de acabar no mesmo dia.',
 };
 
 export function roundUp(minutes, step) {
@@ -47,6 +48,21 @@ export function checkSlot(start, minutes, typeId, ctx) {
   }
   const max = typeId ? ctx.maxPerDay?.[typeId] : null;
   if (max && sameTypeThatDay >= max) return { ok: false, reason: 'limite_dia' };
+  return { ok: true, end };
+}
+
+/**
+ * Avaliações de investigação: qualquer hora do dia (também no passado, para registar depois),
+ * sem grelha nem horário de exames; só não podem sobrepor-se a outro exame ou avaliação.
+ * Os bloqueios não contam: servem para tirar vagas ao secretariado.
+ */
+export function checkFree(start, minutes, ctx) {
+  const end = addMinutes(start, minutes);
+  if (end.slice(0, 10) !== start.slice(0, 10) && end.slice(11) !== '00:00') return { ok: false, reason: 'dia_seguinte' };
+  for (const e of ctx.busy) {
+    if (ctx.ignoreExamId && e.id === ctx.ignoreExamId) continue;
+    if (overlaps(start, end, e.starts_at, e.ends_at)) return { ok: false, reason: 'sobreposicao', with: e };
+  }
   return { ok: true, end };
 }
 

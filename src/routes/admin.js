@@ -157,13 +157,14 @@ export default async function adminRoutes(app, { db, config }) {
   // ---------- Sistema ----------
   app.get('/admin/sistema', async (req, reply) => {
     const header = getSetting(db, 'report_header');
+    const logo = getSetting(db, 'report_logo');
     const icsUrl = `${req.protocol}://${req.headers.host}/ics/${getSetting(db, 'ics_token')}/agenda.ics`;
     const backups = listBackups(config.backupDir).slice(0, 15);
     return send(reply, req, {
       title: 'Sistema',
       active: 'admin',
       body: html`${pageHead('Administração')}${tabs('sistema')}${flash(req.query, req)}
-        <section class="sec"><div class="sec-h"><h2>Relatórios</h2>${help('Cabeçalho e assinatura que aparecem em todos os relatórios. Os já validados não mudam.')}</div>
+        <section class="sec"><div class="sec-h"><h2>Relatórios</h2>${help('Cabeçalho, logotipo e assinatura que aparecem em todos os relatórios. Os já validados não mudam.')}</div>
           <form method="post" action="/admin/relatorio" class="stack">
             <label>Cabeçalho <span class="opt">uma linha por linha</span><textarea name="report_header" rows="3" maxlength="600">${header.join('\n')}</textarea></label>
             <div class="grid3">
@@ -173,6 +174,17 @@ export default async function adminRoutes(app, { db, config }) {
             </div>
             <div><button class="btn primary" type="submit">Guardar</button></div>
           </form>
+          <h3 class="day-label" id="logotipo">Logotipo</h3>
+          <div class="logo-row">
+            <div class="logo-prev">${logo ? html`<img src="${logo}" alt="Logotipo atual">` : html`<span class="muted">Sem logotipo</span>`}</div>
+            <form method="post" action="/admin/relatorio/logo" class="logo-form" data-logo-form>
+              <input type="hidden" name="logo" value="">
+              <label class="btn"><input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" data-logo-file class="sr-file">${logo ? 'Trocar imagem…' : 'Escolher imagem…'}</label>
+              <span class="muted small" data-logo-name>PNG, JPG, WebP ou SVG, até 200 KB. Aparece no canto do cabeçalho.</span>
+              <noscript><span class="small">Precisa de JavaScript para carregar a imagem.</span></noscript>
+            </form>
+            ${logo ? html`<form method="post" action="/admin/relatorio/logo/remover" class="inline"><button class="btn ghost" data-confirm="Remover o logotipo dos relatórios? Os já validados não mudam.">Remover</button></form>` : ''}
+          </div>
         </section>
         <section class="sec"><div class="sec-h"><h2>Calendário (ICS)</h2>${help('Subscreva no Outlook ou no telemóvel para ver os exames marcados. Só mostra o tipo de exame e a hora, sem dados de doentes.')}</div>
           <p class="link-row"><button type="button" class="copy" data-copy="${icsUrl}" aria-label="Copiar endereço do calendário">${icsUrl}${icon('copiar', 'ico xs')}</button>
@@ -198,6 +210,24 @@ export default async function adminRoutes(app, { db, config }) {
       audit(db, req.user.id, 'alterar_relatorio', 'definicoes');
     })();
     return reply.redirect('/admin/sistema?msg=guardado');
+  });
+
+  // Logotipo: o browser lê o ficheiro e envia-o como data URL (sem dependências de multipart).
+  app.post('/admin/relatorio/logo', { bodyLimit: 400 * 1024 }, async (req, reply) => {
+    const v = str(req.body?.logo);
+    const m = /^data:image\/(png|jpeg|webp|svg\+xml);base64,([A-Za-z0-9+/=]+)$/.exec(v);
+    const bytes = m ? Buffer.from(m[2], 'base64') : null;
+    const okSvg = (b) => /<svg[\s>]/i.test(b.toString('utf8')) && !/<script|on[a-z]+\s*=|javascript:/i.test(b.toString('utf8'));
+    if (!m || !bytes.length || bytes.length > 200 * 1024 || (m[1] === 'svg+xml' && !okSvg(bytes))) return reply.redirect('/admin/sistema?err=logo_invalido#logotipo');
+    setSetting(db, 'report_logo', v);
+    audit(db, req.user.id, 'logotipo', 'definicoes', null, { tipo: m[1], bytes: bytes.length });
+    return reply.redirect('/admin/sistema?msg=logo#logotipo');
+  });
+
+  app.post('/admin/relatorio/logo/remover', async (req, reply) => {
+    setSetting(db, 'report_logo', '');
+    audit(db, req.user.id, 'logotipo_removido', 'definicoes');
+    return reply.redirect('/admin/sistema?msg=logo_removido#logotipo');
   });
 
   app.post('/admin/reservas', async (req, reply) => {
@@ -260,28 +290,32 @@ export default async function adminRoutes(app, { db, config }) {
     };
     const durSelect = (name, value, label) => html`<select name="${name}" class="dur-sel" data-duration data-step="${step}" aria-label="${label}">${durations(value).map((m) => html`<option value="${m}"${m === value ? raw(' selected') : ''}>${fmtMin(m)}</option>`)}</select>`;
     const blocks = (min) => html`<span class="blocks" aria-hidden="true">${Array.from({ length: Math.min(16, Math.ceil(min / step)) }, () => html`<i></i>`)}${Math.ceil(min / step) > 16 ? html`<b>+${Math.ceil(min / step) - 16}</b>` : ''}</span>`;
+    const actsTable = (rows, research) => html`<table class="acts${research ? ' research' : ''}">
+              <thead><tr><th scope="col">${research ? 'Avaliação' : 'Ato'}</th><th scope="col">Duração</th><th scope="col" class="hide-m">Ocupa</th><th scope="col">${research ? '' : 'Máx./dia'}</th><th scope="col">${research ? 'Ficha de resultados' : 'Ficha do relatório'}</th><th scope="col">Ativo</th></tr></thead>
+              <tbody>${rows.map((t) => html`<tr class="${t.active ? '' : 'inactive'}">
+                <td><input name="name.${t.id}" value="${t.name}" required maxlength="120" aria-label="Nome"></td>
+                <td>${durSelect(`minutes.${t.id}`, t.minutes, `Duração de ${t.name}`)}</td>
+                <td class="hide-m">${blocks(t.minutes)}</td>
+                <td>${research ? html`<input type="hidden" name="max.${t.id}" value="">` : html`<select name="max.${t.id}" class="max-sel" aria-label="Máximo por dia de ${t.name}"><option value="">—</option>${Array.from({ length: 10 }, (_, i) => i + 1).map((n) => html`<option${t.max_per_day === n ? raw(' selected') : ''}>${n}</option>`)}</select>`}</td>
+                <td>${fichaCell(t)}</td>
+                <td class="center"><input type="checkbox" name="active.${t.id}" value="1"${t.active ? raw(' checked') : ''} aria-label="${t.name} ativo"></td>
+              </tr>`)}</tbody>
+            </table>`;
     return send(reply, req, {
       title: 'Atos / MCDTs',
       active: 'admin',
       body: html`${pageHead('Administração')}${tabs('exames')}${flash(req.query, req)}
-        <section class="sec"><div class="sec-h"><h2>Atos / MCDTs</h2>${help(html`<p><b>Duração</b>: tempo total do ato, com preparação. É o que cada reserva ocupa na agenda. Cada quadrado = ${step} min da grelha.</p><p><b>Máx./dia</b>: limite de exames desse ato no mesmo dia (p. ex. eletrofisiologia). «—» = sem limite.</p><p>Mudar a duração não altera exames já marcados. Para deixar de usar um ato, desmarque «Ativo» em vez de o apagar.</p>`)}</div>
+        <section class="sec"><div class="sec-h"><h2>Atos / MCDTs clínicos</h2>${help(html`<p><b>Duração</b>: tempo total do ato, com preparação. É o que cada reserva ocupa na agenda. Cada quadrado = ${step} min da grelha.</p><p><b>Máx./dia</b>: limite de exames desse ato no mesmo dia (p. ex. eletrofisiologia). «—» = sem limite.</p><p>Mudar a duração não altera exames já marcados. Para deixar de usar um ato, desmarque «Ativo» em vez de o apagar.</p>`)}</div>
           <form method="post" action="/admin/exames" class="acts-form">
-            <table class="acts">
-              <thead><tr><th scope="col">Ato</th><th scope="col">Duração</th><th scope="col" class="hide-m">Ocupa</th><th scope="col">Máx./dia</th><th scope="col">Ficha do relatório</th><th scope="col">Ativo</th></tr></thead>
-              <tbody>${types.map((t) => html`<tr class="${t.active ? '' : 'inactive'}">
-                <td><input name="name.${t.id}" value="${t.name}" required maxlength="120" aria-label="Nome"></td>
-                <td>${durSelect(`minutes.${t.id}`, t.minutes, `Duração de ${t.name}`)}</td>
-                <td class="hide-m">${blocks(t.minutes)}</td>
-                <td><select name="max.${t.id}" class="max-sel" aria-label="Máximo por dia de ${t.name}"><option value="">—</option>${Array.from({ length: 10 }, (_, i) => i + 1).map((n) => html`<option${t.max_per_day === n ? raw(' selected') : ''}>${n}</option>`)}</select></td>
-                <td>${fichaCell(t)}</td>
-                <td class="center"><input type="checkbox" name="active.${t.id}" value="1"${t.active ? raw(' checked') : ''} aria-label="${t.name} ativo"></td>
-              </tr>`)}</tbody>
-            </table>
+            ${actsTable(types.filter((t) => t.kind !== 'investigacao'), false)}
+            <div class="sec-h sub-h" id="investigacao"><h2>Avaliações de investigação</h2>${help(html`<p>Tipos de avaliação para participantes de projetos. Marcam-se em <a href="/investigacao/nova">Nova avaliação de investigação</a>, a qualquer hora, e nunca aparecem no link do secretariado.</p><p>Cada tipo tem a sua ficha de resultados, como os atos clínicos.</p>`)}</div>
+            ${types.some((t) => t.kind === 'investigacao') ? actsTable(types.filter((t) => t.kind === 'investigacao'), true) : html`<p class="empty">Ainda não há. Crie um em «Novo ato ou avaliação», abaixo.</p>`}
             <div class="form-actions sticky-bar"><button class="btn primary" type="submit">Guardar alterações</button></div>
           </form>
         </section>
-        <section class="sec quiet"><div class="sec-h"><h2>Novo ato</h2></div>
+        <section class="sec quiet"><div class="sec-h"><h2>Novo ato ou avaliação</h2></div>
           <form method="post" action="/admin/exames/novo" class="toolbar">
+            <label>Tipo <select name="kind"><option value="clinico">Ato / MCDT clínico</option><option value="investigacao"${req.query.tipo === 'investigacao' ? raw(' selected') : ''}>Avaliação de investigação</option></select></label>
             <label>Nome<input name="name" required maxlength="120" placeholder="p. ex. Campo visual"></label>
             <label>Duração ${durSelect('minutes', 30, 'Duração')}</label>
             <label>Ficha <select name="from"><option value="">em branco</option>${types.map((t) => html`<option value="${t.id}">cópia de ${t.name}</option>`)}</select></label>
@@ -321,8 +355,9 @@ export default async function adminRoutes(app, { db, config }) {
     const sort = db.prepare('SELECT COALESCE(MAX(sort), 0) + 1 FROM exam_types').pluck().get();
     const src = db.prepare('SELECT form FROM exam_types WHERE id = ?').get(Number(str(req.body?.from)) || 0);
     const form = src ? parseForm(src.form) : { ...formFromTemplate('generico'), title: name };
-    const info = db.prepare(`INSERT INTO exam_types (code, name, minutes, is_electro, report_template, active, sort, form)
-      VALUES (?, ?, ?, 0, 'generico', 1, ?, ?)`).run(`t${crypto.randomBytes(4).toString('hex')}`, name, minutes, sort, JSON.stringify(form));
+    const kind = str(req.body?.kind) === 'investigacao' ? 'investigacao' : 'clinico';
+    const info = db.prepare(`INSERT INTO exam_types (code, name, minutes, is_electro, report_template, active, sort, form, kind)
+      VALUES (?, ?, ?, 0, 'generico', 1, ?, ?, ?)`).run(`t${crypto.randomBytes(4).toString('hex')}`, name, minutes, sort, JSON.stringify(form), kind);
     const id = Number(info.lastInsertRowid);
     audit(db, req.user.id, 'criar', 'tipo_exame', id);
     return reply.redirect(`/admin/exames/${id}/ficha?msg=guardado`);
