@@ -745,8 +745,6 @@ input.small-num { max-width: 4.5rem; }
 .help-body p { margin: 0 0 0.4rem; } .help-body p:last-child { margin: 0; }
 .help[open] > .help-body { display: block; }
 @media (hover: hover) { .help:hover > .help-body { display: block; } }
-.sec-h .help-body, .page-title .help-body { left: auto; right: -0.5rem; }
-.sec-h h2 + .help .help-body, .page-title h1 + .help .help-body { left: -0.5rem; right: auto; }
 .time-sel { width: 7.25rem; font-family: var(--f-mono); font-variant-numeric: tabular-nums; padding: 0.4rem 1.7rem 0.4rem 0.6rem; }
 
 /* ---------- Horário semanal ---------- */

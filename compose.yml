@@ -4,7 +4,7 @@
 services:
   app:
     build: .
-    image: ortoptica-agenda:1.6.0
+    image: ortoptica-agenda:1.6.1
     container_name: ortoptica-agenda
     restart: unless-stopped
     init: true

@@ -213,6 +213,26 @@
   document.addEventListener('keydown', function (ev) {
     if (ev.key === 'Escape') document.querySelectorAll('details.help[open]').forEach(function (d) { d.open = false; });
   });
+  // A caixa abre por baixo do «?» e desloca-se o necessário para caber sempre no ecrã
+  // (com 12 px de margem), seja o «?» à esquerda, ao centro ou à direita da página.
+  function placeHelp(d) {
+    var body = d.querySelector('.help-body');
+    if (!body) return;
+    body.style.transform = '';
+    var r = body.getBoundingClientRect();
+    if (!r.width) return;
+    var vw = document.documentElement.clientWidth;
+    var m = 12;
+    var dx = 0;
+    if (r.right > vw - m) dx = vw - m - r.right;
+    if (r.left + dx < m) dx = m - r.left;
+    if (dx) body.style.transform = 'translateX(' + Math.round(dx) + 'px)';
+  }
+  document.querySelectorAll('details.help').forEach(function (d) {
+    d.addEventListener('toggle', function () { if (d.open) placeHelp(d); });
+    d.addEventListener('mouseenter', function () { placeHelp(d); });
+  });
+  window.addEventListener('resize', function () { document.querySelectorAll('details.help[open]').forEach(placeHelp); });
 
   // Horário: copiar a segunda-feira para terça a sexta.
   var fill = document.querySelector('[data-fill-week]');
