@@ -1007,3 +1007,50 @@ td.acts-col .btn + .btn { margin-left: 0.25rem; }
   .paper.map { padding: 6mm 4mm; overflow-x: auto; }
 }
 .map-t .nw { white-space: nowrap; }
+
+/* ---------- Quadro «Fluxo» ---------- */
+.late-txt { color: var(--late); font-weight: 700; }
+.flow { display: grid; grid-template-columns: 8.5rem repeat(7, minmax(9.5rem, 1fr)); gap: 0 0.5rem; overflow-x: auto; padding-bottom: 0.5rem; }
+.fl-head { display: contents; }
+.fl-head > span { position: sticky; top: 0; z-index: 2; padding: 0.4rem 0.2rem 0.5rem; background: var(--paper); border-bottom: var(--rule-w) var(--rule-style) var(--ink);
+  font-family: var(--label-font); font-size: var(--label-size); text-transform: var(--label-case); letter-spacing: var(--label-track); font-weight: 700; color: var(--ink-2); }
+.fl-lane { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; border-bottom: 1px solid var(--rule); padding: 0.6rem 0; }
+.fl-lane-h { display: flex; align-items: center; gap: 0.4rem; margin: 0; padding-top: 0.3rem; font-size: 0.95rem; align-self: start; }
+.fl-col-h { display: none; }
+.fl-cell { min-width: 0; border-radius: var(--r); padding: 0.25rem; transition: background-color 120ms ease, outline-color 120ms ease; outline: 2px dashed transparent; outline-offset: -2px; }
+.fl-cell.off { background: repeating-linear-gradient(135deg, transparent 0 6px, var(--sunk) 6px 7px); border-radius: var(--r); }
+.fl-none { margin: 0.4rem 0.3rem; color: var(--ink-3); }
+.fl-more { margin: 0.35rem 0.3rem 0; font-size: 0.85rem; }
+.fl-cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+.fl-card { background: var(--sheet); border: 1px solid var(--rule-strong); border-radius: var(--r); padding: 0.5rem 0.6rem; font-size: 0.86rem; display: flex; flex-direction: column; gap: 0.2rem; }
+.fl-card[draggable="true"] { cursor: grab; }
+.fl-card.stale { border-left: 4px solid var(--late); }
+.fl-card.dragging { opacity: 0.45; }
+.fl-top { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 0.4rem; align-items: baseline; }
+.fl-also { color: var(--owed-ink); font-size: 0.78rem; }
+.fl-top .when { font-family: var(--f-mono); font-size: 0.82rem; color: var(--ink-2); }
+.fl-stale { color: var(--late); font-weight: 700; font-size: 0.78rem; white-space: nowrap; }
+.fl-title { font-weight: 700; color: var(--ink); text-decoration: none; line-height: 1.25; }
+.fl-title:hover { text-decoration: underline; }
+.fl-meta { display: flex; flex-wrap: wrap; gap: 0.1rem 0.5rem; color: var(--ink-3); font-size: 0.8rem; }
+.fl-meta .proc, .fl-meta .req, .fl-meta .part { font-size: 0.8rem; }
+.fl-acts { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.25rem; }
+.fl-acts .btn.mini { min-height: 2rem; font-size: 0.8rem; white-space: normal; text-align: center; line-height: 1.15; padding: 0.25rem 0.55rem; }
+.flow.is-dragging .fl-cell.drop-ok { outline-color: var(--accent); background: var(--accent-soft); }
+.flow.is-dragging .fl-cell.drop-over { background: var(--accent-line); }
+@media (max-width: 760px) {
+  .flow { display: block; overflow: visible; }
+  .fl-head { display: none; }
+  .fl-lane { display: block; padding: 0.75rem 0 1rem; }
+  .fl-lane-h { font-size: 1.05rem; padding-bottom: 0.4rem; border-bottom: var(--rule-w) var(--rule-style) var(--ink); margin-bottom: 0.5rem; }
+  .fl-cell.off, .fl-cell.empty { display: none; }
+  .fl-cell { padding: 0.25rem 0 0.5rem; }
+  .fl-col-h { display: flex; align-items: center; gap: 0.4rem; margin: 0.4rem 0 0.4rem; font-size: 0.82rem; color: var(--ink-2); text-transform: var(--label-case); letter-spacing: var(--label-track); }
+  .fl-card[draggable="true"] { cursor: auto; }
+}
+@media (min-width: 761px) and (max-width: 1360px) {
+  .flow { grid-template-columns: repeat(7, minmax(8rem, 1fr)); gap: 0 0.4rem; }
+  .fl-head > span:first-child { display: none; }
+  .fl-lane-h { grid-column: 1 / -1; padding: 0 0 0.45rem; }
+  .fl-card { padding: 0.45rem 0.5rem; }
+}

@@ -133,6 +133,7 @@ function nav(user, counts, active) {
   return html`<nav class="nav" aria-label="Principal">
     ${item('/hoje', 'Hoje', 'hoje', 'hoje', count(todayCount, 'owed'))}
     ${item('/agenda', 'Agenda', 'agenda', 'agenda')}
+    ${item('/fluxo', 'Fluxo', 'fluxo', 'fluxo')}
     ${item('/pedidos', 'Pedidos', 'pedidos', 'pedidos', count(counts.porAgendar))}
     ${item('/estatistica', 'Estatística', 'estatistica', 'estatistica')}
     ${item('/admin', 'Admin.', 'admin', 'admin')}

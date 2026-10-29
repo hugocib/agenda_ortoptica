@@ -21,7 +21,7 @@ test('link de reservas: token errado não mostra nada; certo mostra vagas sem da
   // Pedido fora do circuito com nome de doente: não pode aparecer no link
   const hugo = await login(app, 'hugo');
   await post(app, '/pedidos', hugo, { patient_process: '55555', patient_name: 'Maria Doente', origin: 'externo', priority: 'normal', exam_type_id: types.oct });
-  const page = await get(app, `${base}?tipo=${types.oct}`);
+  const page = await get(app, `${base}?tipo=${types.oct}&semana=${nextWeekday(2)}`);
   assert.equal(page.statusCode, 200);
   assert.ok(!page.body.includes('Maria Doente') && !page.body.includes('55555'));
   // As horas são uma escolha (rádio); só o botão de confirmação envia a reserva

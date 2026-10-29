@@ -9,6 +9,9 @@
   <symbol id="i-agenda" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
     <path d="M5 5.5h14a1 1 0 0 1 1 1V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1z"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/><path d="M8 14h2M14 14h2M8 17h2"/>
   </symbol>
+  <symbol id="i-fluxo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 4.5h4.5v15H4zM10 4.5h4.5v9H10zM16 4.5h4v12h-4z"/>
+  </symbol>
   <symbol id="i-estatistica" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
     <path d="M4 20h16"/><path d="M7 16.5V11M12 16.5V6M17 16.5v-3.5"/>
   </symbol>
