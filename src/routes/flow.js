@@ -4,9 +4,9 @@
 // tem um só botão, o passo seguinte. A «Hoje» continua a ser o dia; aqui vê-se onde o trabalho encalha.
 import { html } from '../html.js';
 import { examsWhere } from '../repo.js';
-import { buildBoard, COLUMN_INFO, COLUMNS, STALE_DAYS } from '../domain/flow.js';
+import { buildBoard, COLUMN_INFO, COLUMNS, LANES, STALE_DAYS } from '../domain/flow.js';
 import { addDays, fmtDate, todayLocal } from '../time.js';
-import { flash, help, pageHead, patientLabel, postButton } from '../ui.js';
+import { flash, pageHead, patientLabel, postButton } from '../ui.js';
 import { send } from './util.js';
 
 const BACK = '/fluxo';
@@ -61,7 +61,7 @@ export default async function flowRoutes(app, { db }) {
       const st = colStats[c.key];
       const info = COLUMN_INFO[c.key];
       return html`<div class="fl-ch${st.stale ? ' has-stale' : ''}">
-        <span class="fl-ch-t"><span class="fl-ch-name">${c.label}${mobile ? '' : help(html`<p>${info.what}</p>${info.who ? html`<p>Vez de: <b>${info.who}</b>.</p>` : ''}`, `O que é «${c.label}»`)}</span>${mobile ? '' : html`<span class="count">${st.n}</span>`}</span>
+        <span class="fl-ch-t"><span class="fl-ch-name">${c.label}</span>${mobile ? '' : html`<span class="count">${st.n}</span>`}</span>
         ${!mobile && st.stale ? html`<span class="fl-ch-late">${st.stale} ${st.stale === 1 ? 'parado' : 'parados'} · o mais antigo ${staleText(c.key, st.oldest)}</span>` : ''}
       </div>`;
     };
@@ -73,13 +73,16 @@ export default async function flowRoutes(app, { db }) {
       autorefresh: true,
       body: html`${pageHead('Fluxo', {
           sub: html`<span>${total} em curso${stale ? html` · <span class="late-txt">${stale} ${stale === 1 ? 'parado' : 'parados'}</span>` : ''}</span>`,
-          info: html`<p>Onde está cada exame no seu percurso. As colunas vêm do estado do exame: um cartão passa à coluna seguinte quando o passo acontece, aqui ou noutra página.</p><p>Cada cartão tem o botão do passo seguinte; o nome do exame abre a página dele.</p><p>A vermelho: parados há demasiado tempo (por confirmar ou por marcar há mais de ${STALE_DAYS.entrada} dias, relatório há mais de ${STALE_DAYS.relatorio}, por executar no Siima há mais de ${STALE_DAYS.siima}, ou o dia já passou).</p>`,
+          info: html`<p>Onde está cada exame no seu percurso. Um cartão passa à coluna seguinte quando o passo acontece, aqui ou noutra página. Cada cartão tem o botão do passo seguinte; o nome do exame abre a página dele.</p>
+            <dl class="fl-help">${COLUMNS.map((c) => html`<dt>${c.label}</dt><dd>${COLUMN_INFO[c.key].what}${COLUMN_INFO[c.key].who ? ` Vez de: ${COLUMN_INFO[c.key].who}.` : ''}</dd>`)}</dl>
+            <p><b>Circuitos:</b> ${LANES.map((l, i) => html`${i ? ' ' : ''}<b>${l.label}</b> — ${l.note}`)}</p>
+            <p>A vermelho: parados há demasiado tempo (por confirmar ou por marcar há mais de ${STALE_DAYS.entrada} dias, relatório há mais de ${STALE_DAYS.relatorio}, por executar no Siima há mais de ${STALE_DAYS.siima}, ou o dia já passou).</p>`,
         })}
         ${flash(req.query, req)}
         <div class="flow">
           <div class="fl-head"><span class="fl-corner"></span>${COLUMNS.map((c) => colHead(c))}</div>
           ${shown.map((l) => html`<section class="fl-lane" aria-labelledby="fl-l-${l.key}">
-            <div class="fl-lane-h"><h2 id="fl-l-${l.key}">${l.label}<span class="count">${l.total}</span></h2>${help(l.note)}</div>
+            <div class="fl-lane-h"><h2 id="fl-l-${l.key}">${l.label}<span class="count">${l.total}</span></h2></div>
             ${COLUMNS.map((c) => {
               if (!l.cols.includes(c.key)) return html`<div class="fl-cell off" aria-hidden="true"></div>`;
               const cards = l.cells[c.key];

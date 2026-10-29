@@ -61,7 +61,8 @@ test('fluxo: página com faixas, cartões e ações; no menu', async () => {
   assert.match(r.body, /href="\/fluxo" class="nav-i active"/);
   assert.match(r.body, /Secretariado/);
   assert.match(r.body, /Investigação/);
-  assert.match(r.body, /Vez de: <b>ortoptista<\/b>\./);
+  assert.match(r.body, /Vez de: ortoptista\./);
+  assert.equal((r.body.match(/class="help"/g) || []).length, 1, 'só o «?» do título');
   assert.ok(!r.body.includes('class="fl-ch-what"'), 'explicação só no «?»');
   assert.match(r.body, /Marcados para um dia que ainda não chegou/);
   assert.match(r.body, /Confirmar a reserva/);

@@ -25,6 +25,14 @@ const Schema = z.object({
   if (Boolean(v.remind_date) !== Boolean(v.remind_time)) ctx.addIssue({ code: 'custom', path: ['remind_date'], message: 'Indique o dia e a hora do lembrete (ou nenhum).' });
 });
 
+// Barra de formatação das notas: [comando, nome, texto do botão, classe].
+const MD_TOOLS = [
+  [['h1', 'Título 1', 'H1'], ['h2', 'Título 2', 'H2'], ['h3', 'Título 3', 'H3']],
+  [['bold', 'Negrito (Ctrl+B)', 'B', 'b'], ['italic', 'Itálico (Ctrl+I)', 'I', 'i'], ['strike', 'Riscado', 'S', 's'], ['code', 'Código', '‹›']],
+  [['ul', 'Lista', '•', 'dot'], ['ol', 'Lista numerada', '1.'], ['task', 'Item a marcar', '☐'], ['quote', 'Citação', '❝']],
+  [['link', 'Link', 'Link'], ['hr', 'Linha separadora', '—']],
+];
+
 const ddmm = (d) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
 
 function dueBadge(t, today) {
@@ -107,8 +115,13 @@ function form(req, db, { task = null, values = {}, errors = {}, exam = null }) {
         <div class="span2 tk-notes-box" data-notes>
           ${task && v.notes ? html`<div class="tk-notes-h"><span class="tk-notes-l">Notas</span><button type="button" class="btn mini ghost" data-notes-edit hidden>Editar notas</button></div>
             <div class="md tk-notes-view" data-notes-view>${raw(renderMarkdown(v.notes))}</div>` : ''}
-          <label class="tk-notes-edit" data-notes-field>Notas <span class="opt">opcional · Markdown: <code>#</code> títulos, <code>**negrito**</code>, <code>*itálico*</code>, <code>- lista</code>, <code>- [ ] item</code>, <code>[texto](https://…)</code></span>
-            <textarea name="notes" rows="${v.notes && v.notes.split('\n').length > 6 ? 12 : 5}" maxlength="4000">${v.notes || ''}</textarea>${err('notes')}</label>
+          <div class="tk-notes-edit" data-notes-field>
+            <label for="tk-notes">Notas <span class="opt">opcional · Markdown: <code>#</code> títulos, <code>**negrito**</code>, <code>*itálico*</code>, <code>- lista</code>, <code>- [ ] item</code>, <code>[texto](https://…)</code></span></label>
+            <div class="md-bar" role="toolbar" aria-label="Formatação das notas" aria-controls="tk-notes" data-md-bar hidden>
+              ${MD_TOOLS.map((g) => html`<span class="md-group">${g.map(([cmd, label, text, cls]) => html`<button type="button" class="md-btn${cls ? ` ${cls}` : ''}" data-md="${cmd}" aria-label="${label}" title="${label}">${text}</button>`)}</span>`)}
+            </div>
+            <textarea id="tk-notes" name="notes" rows="${v.notes && v.notes.split('\n').length > 6 ? 12 : 5}" maxlength="4000">${v.notes || ''}</textarea>${err('notes')}
+          </div>
         </div>
         ${ck ? ck.body : html`<p class="span2 fhint">A checklist acrescenta-se depois de criar a tarefa.</p>`}
         <div class="span2 form-actions"><button class="btn primary" type="submit">${task ? 'Guardar' : 'Criar tarefa'}</button><a class="btn ghost" href="${linked && !task ? `/exames/${linked.id}` : '/tarefas'}">Cancelar</a></div>

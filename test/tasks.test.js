@@ -331,5 +331,7 @@ test('notas em Markdown: títulos, listas, links seguros, sem HTML', async () =>
   assert.ok(!page.body.includes('<script>x()'));
   assert.match(page.body, /data-notes-edit/);
   // O texto original continua no campo para editar
-  assert.match(page.body, /<textarea name="notes"[^>]*># Plano/);
+  assert.match(page.body, /<textarea[^>]*name="notes"[^>]*># Plano/);
+  assert.match(page.body, /role="toolbar" aria-label="Formatação das notas"/);
+  assert.match(page.body, /data-md="h1"/);
 });

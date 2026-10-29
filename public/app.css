@@ -1308,3 +1308,24 @@ td.acts-col .btn + .btn { margin-left: 0.25rem; }
 .fl-ch-name { display: inline; }
 .fl-ch-name .help { margin-left: 0.35em; }
 @media (min-width: 761px) { .fl-ch-t { min-height: 0; align-items: flex-start; } }
+/* Barra de formatação das notas */
+.tk-notes-edit { display: flex; flex-direction: column; gap: 0.35rem; }
+.md-bar { display: flex; flex-wrap: wrap; gap: 0.25rem 0.6rem; align-items: center; padding: 0.3rem; border: 1px solid var(--rule-strong); border-bottom: 0; border-radius: var(--r) var(--r) 0 0; background: var(--sunk); margin-bottom: -0.35rem; }
+.md-bar + textarea { border-top-left-radius: 0; border-top-right-radius: 0; }
+.md-group { display: inline-flex; gap: 0.15rem; }
+.md-group + .md-group { padding-left: 0.6rem; border-left: 1px solid var(--rule-strong); }
+.md-btn { min-width: 2.1rem; min-height: 2.1rem; padding: 0 0.45rem; border: 1px solid transparent; border-radius: var(--r-xs); background: transparent; color: var(--ink-2); font: inherit; font-size: 0.85rem; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.md-btn:hover { background: var(--sheet); border-color: var(--rule-strong); color: var(--ink); }
+.md-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.md-btn.b { font-weight: 800; }
+.md-btn.i { font-style: italic; font-family: Georgia, serif; }
+.md-btn.s { text-decoration: line-through; }
+@media (pointer: coarse) { .md-btn { min-width: 2.5rem; min-height: 2.5rem; } }
+.fl-help { display: grid; grid-template-columns: auto 1fr; gap: 0.2rem 0.6rem; margin: 0 0 0.5rem; }
+.fl-help dt { font-weight: 700; color: var(--ink); }
+.fl-help dd { margin: 0; }
+.md-btn.dot { font-size: 1.25rem; line-height: 1; }
+@media (max-width: 560px) {
+  .md-bar { gap: 0.25rem 0.5rem; }
+  .md-group + .md-group { padding-left: 0; border-left: 0; }
+}

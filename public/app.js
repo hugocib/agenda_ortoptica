@@ -710,4 +710,87 @@
       ta.setSelectionRange(ta.value.length, ta.value.length);
     });
   });
+
+  // Barra de formatação Markdown das notas. Usa insertText para o Ctrl+Z continuar a funcionar.
+  document.querySelectorAll('[data-md-bar]').forEach(function (bar) {
+    var ta = document.getElementById(bar.getAttribute('aria-controls'));
+    if (!ta) return;
+    bar.hidden = false;
+    var replace = function (start, end, text, selStart, selEnd) {
+      ta.focus();
+      ta.setSelectionRange(start, end);
+      var ok = false;
+      try { ok = document.execCommand('insertText', false, text); } catch (e) { ok = false; }
+      if (!ok || ta.value.slice(start, start + text.length) !== text) ta.setRangeText(text, start, end, 'end');
+      ta.setSelectionRange(selStart, selEnd);
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    var wrap = function (mark, placeholder) {
+      var a = ta.selectionStart, b = ta.selectionEnd, v = ta.value;
+      var sel = v.slice(a, b);
+      // Já formatado: tira as marcas.
+      if (v.slice(a - mark.length, a) === mark && v.slice(b, b + mark.length) === mark) {
+        replace(a - mark.length, b + mark.length, sel, a - mark.length, b - mark.length);
+        return;
+      }
+      var t = sel || placeholder;
+      replace(a, b, mark + t + mark, a + mark.length, a + mark.length + t.length);
+    };
+    var lines = function (prefixFor, strip) {
+      var v = ta.value, a = ta.selectionStart, b = ta.selectionEnd;
+      var ls = v.lastIndexOf('\n', a - 1) + 1;
+      var le = v.indexOf('\n', b > a && v[b - 1] === '\n' ? b - 1 : b);
+      if (le < 0) le = v.length;
+      var block = v.slice(ls, le).split('\n');
+      var all = block.every(function (l, k) { return !l.trim() || l.indexOf(prefixFor(k)) === 0 || (strip && strip.test(l) && prefixFor(k).trim() === (l.match(strip) || [''])[0].trim()); });
+      var out = block.map(function (l, k) {
+        if (!l.trim() && block.length > 1) return l;
+        var p = prefixFor(k);
+        if (all) return l.indexOf(p) === 0 ? l.slice(p.length) : l;
+        return p + (strip ? l.replace(strip, '') : l);
+      }).join('\n');
+      replace(ls, le, out, ls, ls + out.length);
+    };
+    var HEAD = /^#{1,6}\s+/;
+    var LIST = /^(\s*)([-*+]\s+\[[ xX]\]\s+|[-*+]\s+|\d+[.)]\s+)/;
+    var cmds = {
+      bold: function () { wrap('**', 'negrito'); },
+      italic: function () { wrap('*', 'itálico'); },
+      strike: function () { wrap('~~', 'riscado'); },
+      code: function () { wrap('`', 'código'); },
+      h1: function () { lines(function () { return '# '; }, HEAD); },
+      h2: function () { lines(function () { return '## '; }, HEAD); },
+      h3: function () { lines(function () { return '### '; }, HEAD); },
+      ul: function () { lines(function () { return '- '; }, LIST); },
+      ol: function () { lines(function (k) { return (k + 1) + '. '; }, LIST); },
+      task: function () { lines(function () { return '- [ ] '; }, LIST); },
+      quote: function () { lines(function () { return '> '; }); },
+      link: function () {
+        var a = ta.selectionStart, b = ta.selectionEnd, sel = ta.value.slice(a, b);
+        if (/^https?:\/\/\S+$/.test(sel)) { replace(a, b, '[texto](' + sel + ')', a + 1, a + 6); return; }
+        var t = sel || 'texto';
+        var text = '[' + t + '](https://)';
+        // Com texto escolhido, o cursor fica a seguir a https:// para escrever o endereço.
+        if (sel) replace(a, b, text, a + t.length + 11, a + t.length + 11);
+        else replace(a, b, text, a + 1, a + 1 + t.length);
+      },
+      hr: function () {
+        var a = ta.selectionStart, v = ta.value;
+        var before = a && v[a - 1] !== '\n' ? '\n\n' : (a > 1 && v[a - 2] !== '\n' ? '\n' : '');
+        var text = before + '---\n';
+        replace(a, ta.selectionEnd, text, a + text.length, a + text.length);
+      },
+    };
+    bar.addEventListener('mousedown', function (ev) { if (ev.target.closest('[data-md]')) ev.preventDefault(); });
+    bar.addEventListener('click', function (ev) {
+      var btn = ev.target.closest('[data-md]');
+      if (btn && cmds[btn.getAttribute('data-md')]) cmds[btn.getAttribute('data-md')]();
+    });
+    ta.addEventListener('keydown', function (ev) {
+      if (!(ev.ctrlKey || ev.metaKey) || ev.altKey) return;
+      var k = ev.key.toLowerCase();
+      if (k === 'b') { ev.preventDefault(); cmds.bold(); }
+      if (k === 'i') { ev.preventDefault(); cmds.italic(); }
+    });
+  });
 })();
