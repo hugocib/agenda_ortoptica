@@ -15,22 +15,22 @@ test('tarefas: criar, mover com ordem, feito, editar e apagar', async () => {
   assert.match((await get(app, '/hoje', hugo)).body, /href="\/tarefas"/);
 
   // Adição rápida no quadro
-  const q = await post(app, '/tarefas', hugo, { title: 'Rever protocolo MEG', col: 'afazer', project: '', back: '/tarefas' });
+  const q = await post(app, '/tarefas', hugo, { title: 'Rever protocolo MEG', project: '', back: '/tarefas' });
   assert.match(q.headers.location, /^\/tarefas\?msg=tarefa/);
   const a = db.prepare('SELECT id FROM tasks').pluck().get();
-  await post(app, '/tarefas', hugo, { title: 'Pedir dados ao Prof.', col: 'afazer', project: 'neuroCSF', back: '/tarefas' });
-  await post(app, '/tarefas', hugo, { title: 'Enviar preçário', col: 'afazer', back: '/tarefas' });
+  await post(app, '/tarefas', hugo, { title: 'Pedir dados ao Prof.', project: 'neuroCSF', back: '/tarefas' });
+  await post(app, '/tarefas', hugo, { title: 'Enviar preçário', back: '/tarefas' });
   const [, b, c] = db.prepare('SELECT id FROM tasks ORDER BY id').pluck().all();
 
   // Arrastar «c» para o topo de «Em curso», depois «a» para baixo dela
-  let r = await post(app, `/tarefas/${c}/mover`, hugo, { col: 'emcurso', ids: String(c), ajax: '1' });
+  let r = await post(app, `/tarefas/${c}/mover`, hugo, { col: '2', ids: String(c), ajax: '1' });
   assert.equal(r.statusCode, 200);
   assert.deepEqual(JSON.parse(r.body), { ok: true });
-  await post(app, `/tarefas/${a}/mover`, hugo, { col: 'emcurso', ids: `${c},${a}`, ajax: '1' });
-  assert.deepEqual(db.prepare("SELECT id FROM tasks WHERE col = 'emcurso' ORDER BY position").pluck().all(), [c, a]);
+  await post(app, `/tarefas/${a}/mover`, hugo, { col: '2', ids: `${c},${a}`, ajax: '1' });
+  assert.deepEqual(db.prepare("SELECT id FROM tasks WHERE column_id = 2 ORDER BY position").pluck().all(), [c, a]);
   // Reordenar dentro da coluna
-  await post(app, `/tarefas/${a}/mover`, hugo, { col: 'emcurso', ids: `${a},${c}`, ajax: '1' });
-  assert.deepEqual(db.prepare("SELECT id FROM tasks WHERE col = 'emcurso' ORDER BY position").pluck().all(), [a, c]);
+  await post(app, `/tarefas/${a}/mover`, hugo, { col: '2', ids: `${a},${c}`, ajax: '1' });
+  assert.deepEqual(db.prepare("SELECT id FROM tasks WHERE column_id = 2 ORDER BY position").pluck().all(), [a, c]);
   // Coluna inválida
   assert.equal((await post(app, `/tarefas/${a}/mover`, hugo, { col: 'lixo', ajax: '1' })).statusCode, 400);
 
@@ -45,18 +45,18 @@ test('tarefas: criar, mover com ordem, feito, editar e apagar', async () => {
   assert.match((await get(app, '/tarefas?projeto=neuroCSF', hugo)).body, /Pedir dados ao Prof\./);
   assert.ok(!(await get(app, '/tarefas?projeto=neuroCSF', hugo)).body.includes('Enviar preçário'));
   // Voltar de «Feito» limpa a data de conclusão
-  await post(app, `/tarefas/${b}/mover`, hugo, { col: 'afazer', ajax: '1' });
+  await post(app, `/tarefas/${b}/mover`, hugo, { col: '1', ajax: '1' });
   assert.equal(task(db, b).done_at, null);
 
   // Editar: título vazio recusado; prazo e lembrete
-  assert.equal((await post(app, `/tarefas/${a}`, hugo, { title: '', col: 'emcurso' })).statusCode, 400);
+  assert.equal((await post(app, `/tarefas/${a}`, hugo, { title: '', column_id: '2' })).statusCode, 400);
   const tomorrow = addDays(todayLocal(), 1);
-  r = await post(app, `/tarefas/${a}`, hugo, { title: 'Rever protocolo MEG', col: 'emcurso', notes: 'v2', project: 'MEG', due_date: dmy(tomorrow), remind_date: dmy(tomorrow), remind_time: '09:00' });
+  r = await post(app, `/tarefas/${a}`, hugo, { title: 'Rever protocolo MEG', column_id: '2', notes: 'v2', project: 'MEG', due_date: dmy(tomorrow), remind_date: dmy(tomorrow), remind_time: '09:00' });
   assert.match(r.headers.location, /msg=tarefa_guardada/);
   assert.equal(task(db, a).remind_at, `${tomorrow}T09:00`);
   assert.equal(task(db, a).due_date, tomorrow);
   // Lembrete só com dia, sem hora: recusado
-  assert.equal((await post(app, `/tarefas/${a}`, hugo, { title: 'x', col: 'afazer', remind_date: dmy(tomorrow), remind_time: '' })).statusCode, 400);
+  assert.equal((await post(app, `/tarefas/${a}`, hugo, { title: 'x', column_id: '1', remind_date: dmy(tomorrow), remind_time: '' })).statusCode, 400);
 
   r = await post(app, `/tarefas/${c}/apagar`, hugo, {});
   assert.match(r.headers.location, /msg=tarefa_apagada/);
@@ -72,7 +72,7 @@ test('tarefas: prazo de hoje aparece em «Hoje» e no contador; ligação a exam
   const before = db.prepare('SELECT status, updated_at FROM exams WHERE id = ?').get(examId);
 
   assert.match((await get(app, `/tarefas/nova?exame=${examId}`, hugo)).body, /Ligada ao exame/);
-  const r = await post(app, '/tarefas', hugo, { title: 'Pedir requisição', col: 'afazer', due_date: dmy(todayLocal()), exam_id: String(examId) });
+  const r = await post(app, '/tarefas', hugo, { title: 'Pedir requisição', due_date: dmy(todayLocal()), exam_id: String(examId) });
   assert.match(r.headers.location, new RegExp(`/exames/${examId}\\?msg=tarefa`));
   const id = db.prepare('SELECT id FROM tasks').pluck().get();
   assert.equal(task(db, id).exam_id, examId);
@@ -95,8 +95,8 @@ test('lembretes: enviados uma vez, só a quem criou, e não com o quadro desliga
   const uid = db.prepare("SELECT id FROM users WHERE username = 'hugo'").pluck().get();
   saveSubscription(db, uid, { endpoint: 'https://push.example/abc', keys: { p256dh: 'k', auth: 'a' } }, 'https://x.example');
   const today = todayLocal();
-  await post(app, '/tarefas', hugo, { title: 'Ligar à Otília', col: 'afazer', project: 'neuroCSF', remind_date: dmy(today), remind_time: '08:00' });
-  await post(app, '/tarefas', hugo, { title: 'Futura', col: 'afazer', remind_date: dmy(addDays(today, 3)), remind_time: '08:00' });
+  await post(app, '/tarefas', hugo, { title: 'Ligar à Otília', project: 'neuroCSF', remind_date: dmy(today), remind_time: '08:00' });
+  await post(app, '/tarefas', hugo, { title: 'Futura', remind_date: dmy(addDays(today, 3)), remind_time: '08:00' });
   const sent = [];
   const send = async (sub, payload) => { sent.push(JSON.parse(payload)); return { statusCode: 201 }; };
   assert.equal(await sendDueReminders(db, { now: `${today}T08:01`, send }), 1);
@@ -106,7 +106,7 @@ test('lembretes: enviados uma vez, só a quem criou, e não com o quadro desliga
   assert.equal(await sendDueReminders(db, { now: `${today}T08:05`, send }), 0);
   // Mudar a hora rearma
   const id = db.prepare("SELECT id FROM tasks WHERE title = 'Ligar à Otília'").pluck().get();
-  await post(app, `/tarefas/${id}`, hugo, { title: 'Ligar à Otília', col: 'afazer', project: 'neuroCSF', remind_date: dmy(today), remind_time: '10:00' });
+  await post(app, `/tarefas/${id}`, hugo, { title: 'Ligar à Otília', project: 'neuroCSF', remind_date: dmy(today), remind_time: '10:00' });
   assert.equal(await sendDueReminders(db, { now: `${today}T10:00`, send }), 1);
 
   // Desligar o quadro: sem menu, sem páginas, sem lembretes; os dados ficam
@@ -119,4 +119,55 @@ test('lembretes: enviados uma vez, só a quem criou, e não com o quadro desliga
   assert.equal(db.prepare('SELECT COUNT(*) FROM tasks').pluck().get(), 2);
   await post(app, '/admin/tarefas', hugo, { on: '1' });
   assert.equal((await get(app, `/tarefas/${fid}`, hugo)).statusCode, 200);
+});
+
+test('tarefas: hora do lembrete escrita, em vários formatos', async () => {
+  const { app, db } = await makeApp();
+  const hugo = await login(app, 'hugo');
+  const d = dmy(addDays(todayLocal(), 1));
+  for (const [typed, want] of [['1730', '17:30'], ['17h30', '17:30'], ['9', '09:00'], ['930', '09:30'], ['08:05', '08:05']]) {
+    await post(app, '/tarefas', hugo, { title: `t ${typed}`, remind_date: d, remind_time: typed });
+    assert.equal(db.prepare('SELECT remind_at FROM tasks WHERE title = ?').pluck().get(`t ${typed}`).slice(11), want, typed);
+  }
+  const bad = await post(app, '/tarefas', hugo, { title: 'x', remind_date: d, remind_time: '25:00' });
+  assert.equal(bad.statusCode, 400);
+  assert.match(bad.body, /Hora inválida/);
+  assert.match(bad.body, /data-time/);
+});
+
+test('tarefas: colunas editáveis (nome, ordem, número, concluídas) sem perder tarefas', async () => {
+  const { app, db } = await makeApp();
+  const hugo = await login(app, 'hugo');
+  await post(app, '/tarefas', hugo, { title: 'A', column_id: '3' });
+  await post(app, '/tarefas', hugo, { title: 'B', column_id: '4' });
+  assert.match((await get(app, '/tarefas/colunas', hugo)).body, /sim, tarefas para «A fazer»/);
+  const save = (rows, done) => post(app, '/tarefas/colunas', hugo, {
+    id: rows.map((r) => r.id), name: rows.map((r) => r.name), remove: rows.filter((r) => r.id).map((r) => r.remove || ''), done,
+  });
+  // Apagar «À espera» (com 1 tarefa) sem destino: recusado
+  let r = await save([{ id: '1', name: 'A fazer' }, { id: '2', name: 'Em curso' }, { id: '3', name: 'À espera', remove: 'x' }, { id: '4', name: 'Feito' }, { id: '', name: '' }], '4');
+  assert.equal(r.statusCode, 400);
+  // Renomear, reordenar, apagar «À espera» passando a tarefa para «Em curso», e criar «Revisão»
+  r = await save([{ id: '2', name: 'A decorrer' }, { id: '1', name: 'Ideias' }, { id: '3', name: 'À espera', remove: '2' }, { id: '4', name: 'Arquivo' }, { id: '', name: 'Revisão' }], '4');
+  assert.equal(r.statusCode, 302);
+  const cols = db.prepare('SELECT name, is_done FROM task_columns ORDER BY position').all();
+  assert.deepEqual(cols.map((c) => c.name), ['A decorrer', 'Ideias', 'Arquivo', 'Revisão']);
+  assert.deepEqual(cols.map((c) => c.is_done), [0, 0, 1, 0]);
+  assert.equal(db.prepare("SELECT column_id FROM tasks WHERE title = 'A'").pluck().get(), 2);
+  // «Feito» vai para a coluna de concluídas, seja qual for o nome
+  const a = db.prepare("SELECT id FROM tasks WHERE title = 'A'").pluck().get();
+  await post(app, `/tarefas/${a}/mover`, hugo, { col: 'feito', back: '/tarefas' });
+  assert.equal(db.prepare('SELECT column_id FROM tasks WHERE id = ?').pluck().get(a), 4);
+  // Mudar a coluna de concluídas: as tarefas da antiga deixam de estar feitas
+  r = await save([{ id: '2', name: 'A decorrer' }, { id: '1', name: 'Ideias' }, { id: '4', name: 'Arquivo' }, { id: '5', name: 'Revisão' }, { id: '', name: '' }], '5');
+  assert.equal(r.statusCode, 302);
+  assert.equal(db.prepare('SELECT done_at FROM tasks WHERE id = ?').pluck().get(a), null);
+  // Limites: não fica com menos de 2 colunas; nomes repetidos recusados
+  r = await save([{ id: '2', name: 'X', remove: 'x' }, { id: '1', name: 'Ideias', remove: 'x' }, { id: '4', name: 'Arquivo', remove: '5' }, { id: '5', name: 'Revisão' }, { id: '', name: '' }], '5');
+  assert.equal(r.statusCode, 400);
+  r = await save([{ id: '2', name: 'Igual' }, { id: '1', name: 'igual' }, { id: '4', name: 'Arquivo' }, { id: '5', name: 'Revisão' }, { id: '', name: '' }], '5');
+  assert.equal(r.statusCode, 400);
+  const board = await get(app, '/tarefas', hugo);
+  assert.match(board.body, /A decorrer/);
+  assert.match(board.body, /data-drop="5" data-done/);
 });

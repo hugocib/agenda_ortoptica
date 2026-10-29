@@ -6,8 +6,8 @@ import { html, raw } from '../html.js';
 import { createResearch, getExam, knownProjects, listExamTypes, updateResearch } from '../repo.js';
 import { REASONS } from '../domain/slots.js';
 import { fmtDuration } from '../domain/tape.js';
-import { isDate, isTime, toIsoDate, todayLocal } from '../time.js';
-import { dateInput, pageHead, timeSelect } from '../ui.js';
+import { isDate, isTime, normTime, toIsoDate, todayLocal } from '../time.js';
+import { dateInput, pageHead, timeInput } from '../ui.js';
 import { idParam, send, str } from './util.js';
 
 const Schema = z.object({
@@ -16,7 +16,7 @@ const Schema = z.object({
   project: z.string().trim().min(1, 'Indique o projeto.').max(120, 'Demasiado longo.'),
   typeId: z.coerce.number().int().positive({ message: 'Escolha o tipo de avaliação.' }),
   date: z.string().refine(isDate, 'Data inválida (dd/mm/aaaa).'),
-  time: z.string().refine(isTime, 'Escolha a hora de início.'),
+  time: z.string().refine(isTime, 'Escreva a hora de início, por exemplo 14:30 ou 1430.'),
   minutes: z.union([z.literal(''), z.coerce.number().int().min(5, 'Mínimo 5 min.').max(600, 'Máximo 10 h.')]),
   notes: z.string().trim().max(2000, 'Notas demasiado longas.'),
 });
@@ -64,7 +64,7 @@ function form(req, db, { values = {}, errors = {}, exam = null }) {
             <label class="w2">Tipo de avaliação *<select name="typeId" required${inv('typeId')}><option value="">—</option>${types.map((t) => html`<option value="${t.id}"${Number(v.typeId) === t.id ? raw(' selected') : ''}>${t.name} · ${fmtDuration(t.minutes)}</option>`)}</select>${err('typeId')}</label>
             <label>Duração<select name="minutes"${inv('minutes')}><option value="">a do tipo</option>${durationOptions(minutes).map((m) => html`<option value="${m}"${m === minutes ? raw(' selected') : ''}>${fmtDuration(m)}</option>`)}</select>${err('minutes')}</label>
             <label>Data *${dateInput('date', v.date, { required: true, invalid: Boolean(errors.date) })}${err('date')}</label>
-            <label>Início *${timeSelect('time', v.time || '', { from: '07:00', to: '21:00', step: 5 })}${err('time')}</label>
+            <label>Início *${timeInput('time', v.time || '', { required: true, invalid: Boolean(errors.time), label: 'Hora de início (hh:mm)' })}${err('time')}</label>
           </div>
         </fieldset>
         <label class="span2">Notas <span class="opt">opcional; sem dados que identifiquem o participante</span><textarea name="notes" rows="2" maxlength="2000">${v.notes || ''}</textarea>${err('notes')}</label>
@@ -76,6 +76,8 @@ function form(req, db, { values = {}, errors = {}, exam = null }) {
 function parse(body) {
   const values = Object.fromEntries(FIELDS.map((k) => [k, str(body?.[k])]));
   values.date = toIsoDate(values.date);
+  const t = normTime(values.time);
+  if (t) values.time = t;
   const parsed = Schema.safeParse(values);
   const errors = {};
   if (!parsed.success) for (const i of parsed.error.issues) errors[i.path[0]] ??= i.message;

@@ -1,7 +1,7 @@
 // Auditoria de alinhamento: mede o desvio vertical dos «?» face ao texto e a altura dos botões na mesma linha.
 // Uso: arrancar a app com dados de demonstração e correr  node tools/auditar-alinhamento.mjs  (THEME=<id> para outro tema).
 import { chromium } from 'playwright';
-const paths = ['/agenda?vista=dia','/agenda?vista=mes','/agenda?vista=semana','/tarefas','/tarefas/2','/fluxo','/investigacao/nova','/exames/23','/pedidos?f=investigacao','/agenda/mapa','/hoje','/agenda','/pedidos','/pedidos/novo','/estatistica','/admin','/admin/exames','/admin/reservas','/admin/utilizadores','/admin/sistema','/bloqueios','/aparencia','/conta','/admin/exames/1/ficha','/exames/1','/exames/1/agendar','/pedidos/1'];
+const paths = ['/tarefas/colunas','/agenda?vista=dia','/agenda?vista=mes','/agenda?vista=semana','/tarefas','/tarefas/2','/fluxo','/investigacao/nova','/exames/23','/pedidos?f=investigacao','/agenda/mapa','/hoje','/agenda','/pedidos','/pedidos/novo','/estatistica','/admin','/admin/exames','/admin/reservas','/admin/utilizadores','/admin/sistema','/bloqueios','/aparencia','/conta','/admin/exames/1/ficha','/exames/1','/exames/1/agendar','/pedidos/1'];
 const browser = await chromium.launch();
 let total = 0;
 for (const vp of [{width:1280,height:900},{width:390,height:844}]) {

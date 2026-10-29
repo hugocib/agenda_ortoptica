@@ -1143,3 +1143,41 @@ td.acts-col .btn + .btn { margin-left: 0.25rem; }
 @media (max-width: 760px) { .m-legend { display: block; } .m-legend .m-block { font-size: inherit; } .m-legend .m-block::before { content: none; } }
 .agenda-acts { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-left: auto; }
 @media (max-width: 760px) { .agenda-acts { margin-left: 0; width: 100%; } }
+.time-in { width: 6.25rem; font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+/* Quadro de tarefas com qualquer número de colunas (2 a 8). */
+.tk-board { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(14rem, 1fr); overflow-x: auto; padding-bottom: 0.5rem; }
+@media (max-width: 1020px) { .tk-board { grid-template-columns: none; grid-auto-columns: minmax(15rem, 1fr); } }
+@media (max-width: 560px) { .tk-board { grid-auto-flow: row; grid-template-columns: 1fr; overflow: visible; } }
+.tk-cols-t { border-collapse: collapse; width: 100%; max-width: 44rem; }
+.tk-cols-t th { text-align: left; font-size: 0.82rem; color: var(--ink-3); font-weight: 700; padding: 0 0.5rem 0.4rem; }
+.tk-cols-t td { padding: 0.35rem 0.5rem; border-top: 1px solid var(--rule); vertical-align: middle; }
+.tk-cols-t tr.new input[name=name] { border-style: dashed; }
+.tk-ord { white-space: nowrap; width: 1%; }
+.tk-ord .btn.mini { min-height: 2.25rem; min-width: 2.25rem; padding: 0; font-size: 1rem; }
+.tk-cols-t select { min-width: 12rem; }
+@media (max-width: 560px) {
+  .tk-cols-t thead { display: none; }
+  .tk-cols-t tr { display: grid; grid-template-columns: auto 1fr; gap: 0.35rem 0.5rem; padding: 0.6rem 0; border-top: 1px solid var(--rule); }
+  .tk-cols-t td { border: 0; padding: 0; }
+  .tk-cols-t td:nth-child(n+3) { grid-column: 2; }
+  .tk-cols-t td:nth-child(3)::before { content: "Concluídas "; font-size: 0.85rem; color: var(--ink-3); }
+  .tk-cols-t td:nth-child(4):not(:empty)::before { content: "Tarefas: "; font-size: 0.85rem; color: var(--ink-3); }
+  .tk-cols-t td.center { text-align: left; }
+}
+.tk-cols-t { max-width: 52rem; }
+.tk-cols-t td:nth-child(2) { width: 100%; }
+.tk-cols-t td:nth-child(2) input { min-width: 12rem; }
+.tk-cols-t select { width: auto; min-width: 0; max-width: 18rem; }
+@media (max-width: 560px) {
+  .tk-cols-t td:nth-child(2) input { min-width: 0; }
+  .tk-cols-t td:nth-child(5) { display: flex; align-items: center; gap: 0.5rem; }
+  .tk-cols-t td:nth-child(5):not(:empty)::before { content: "Apagar"; font-size: 0.85rem; color: var(--ink-3); }
+  .tk-cols-t select { flex: 1; max-width: none; }
+}
+.tk-cols-t select { width: 16rem; }
+@media (max-width: 560px) {
+  .tk-cols-t tr { grid-template-columns: auto minmax(0, 1fr); }
+  .tk-cols-t td { min-width: 0; }
+  .tk-cols-t select { width: auto; flex: 1 1 0; min-width: 0; }
+}
+.tk-cols-t th { white-space: nowrap; }

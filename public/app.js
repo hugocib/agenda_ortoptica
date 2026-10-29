@@ -540,7 +540,8 @@
       tend();
       var col = list.getAttribute('data-drop');
       var ids = Array.prototype.map.call(list.querySelectorAll('[data-task]'), function (el) { return el.getAttribute('data-task'); });
-      moved.classList.toggle('done', col === 'feito');
+      var isDone = list.hasAttribute('data-done');
+      moved.classList.toggle('done', isDone);
       var none = list.parentNode.querySelector('.tk-none');
       if (none) none.hidden = true;
       var body = new URLSearchParams({ col: col, ids: ids.join(','), ajax: '1' });
@@ -551,12 +552,45 @@
           tboard.querySelectorAll('.tk-col').forEach(function (c) {
             var n = c.querySelectorAll('[data-task]').length;
             var cnt = c.querySelector('.tk-col-h .count');
-            if (cnt && c.getAttribute('data-col') !== 'feito') cnt.textContent = n;
+            if (cnt && !c.classList.contains('is-done')) cnt.textContent = n;
           });
-          if (col === 'feito') { var acts = moved.querySelector('.tk-acts'); if (acts) acts.remove(); }
+          if (isDone) { var acts = moved.querySelector('.tk-acts'); if (acts) acts.remove(); }
         })
         .catch(function () { window.location.reload(); });
     });
     tboard.addEventListener('dragend', tend);
   }
+
+  // Hora escrita (24 h): ao sair do campo, «1730», «17h30» ou «9» ficam «17:30», «09:00».
+  var normTime = function (v) {
+    v = String(v || '').trim().toLowerCase().replace(/\s+/g, '');
+    if (!v) return '';
+    var h, m, mm = /^(\d{1,2})[:h.](\d{1,2})?$/.exec(v);
+    if (mm) { h = +mm[1]; m = +(mm[2] || 0); } else if (/^\d{1,4}$/.test(v)) {
+      if (v.length <= 2) { h = +v; m = 0; } else { h = +v.slice(0, v.length - 2); m = +v.slice(-2); }
+    } else return null;
+    if (!(h >= 0 && h <= 23 && m >= 0 && m <= 59)) return null;
+    return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+  };
+  document.addEventListener('focusout', function (ev) {
+    var inp = ev.target;
+    if (!inp.matches || !inp.matches('input[data-time]')) return;
+    var t = normTime(inp.value);
+    if (t === null) { inp.setAttribute('aria-invalid', 'true'); inp.title = 'Hora inválida: escreva por exemplo 17:30 ou 1730.'; } else {
+      inp.value = t; inp.removeAttribute('aria-invalid'); inp.title = '';
+    }
+  });
+
+  // Colunas das tarefas: as setas mudam a ordem das linhas (guarda-se ao carregar em «Guardar»).
+  document.querySelectorAll('[data-cols]').forEach(function (form) {
+    form.addEventListener('click', function (ev) {
+      var up = ev.target.closest('[data-col-up]');
+      var down = ev.target.closest('[data-col-down]');
+      if (!up && !down) return;
+      var row = ev.target.closest('[data-col-row]');
+      if (up && row.previousElementSibling) row.parentNode.insertBefore(row, row.previousElementSibling);
+      if (down && row.nextElementSibling) row.parentNode.insertBefore(row.nextElementSibling, row);
+      (up || down).focus();
+    });
+  });
 })();

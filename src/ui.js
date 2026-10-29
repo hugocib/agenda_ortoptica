@@ -69,6 +69,7 @@ export const MESSAGES = {
   tarefa_apagada: 'Tarefa apagada.',
   tarefa_feita: 'Tarefa marcada como feita.',
   tarefas_on: 'Quadro de tarefas ligado.',
+  colunas: 'Colunas guardadas.',
   tarefas_off: 'Quadro de tarefas desligado. As tarefas ficam guardadas e voltam se o ligar outra vez.',
   avaliacao: 'Avaliação de investigação registada.',
   avaliacao_alterada: 'Avaliação alterada.',
@@ -103,6 +104,11 @@ export const ERRORS = {
   backup: 'Não foi possível criar a cópia de segurança. Veja os registos do servidor.',
   tipo_com_ficha: 'A ficha desta avaliação já foi começada: o tipo de avaliação já não pode mudar.',
   logo_invalido: 'O logotipo tem de ser uma imagem PNG, JPG, WebP ou SVG com até 200 KB.',
+  colunas_numero: 'O quadro tem de ter entre 2 e 8 colunas.',
+  colunas_nome: 'Cada coluna precisa de um nome (até 40 caracteres).',
+  colunas_repetidas: 'Há colunas com o mesmo nome.',
+  colunas_concluidas: 'Escolha qual é a coluna das concluídas (e não a apague).',
+  colunas_destino: 'Para apagar uma coluna com tarefas, escolha para onde as passar.',
 };
 
 /** Caminho atual sem msg/err/u, para o «desfazer» voltar ao mesmo sítio. */
@@ -331,6 +337,11 @@ export function timeSelect(name, value, { from = '07:00', to = '21:00', step = 1
 }
 const toMinLocal = (t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
 const fromMinLocal = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+/** Hora escrita (24 h, «hh:mm»): mais rápido do que escolher numa lista longa. O servidor normaliza com normTime. */
+export function timeInput(name, value, { label = '', invalid = false, required = false } = {}) {
+  return html`<input name="${name}" value="${value || ''}" class="time-in" inputmode="numeric" maxlength="5" placeholder="hh:mm" autocomplete="off" data-time${required ? raw(' required') : ''}${invalid ? raw(' aria-invalid="true"') : ''}${label ? html` aria-label="${label}"` : ''}>`;
+}
 
 /**
  * Data sempre em dd/mm/aaaa: o campo nativo type="date" mostra mm/dd/aaaa num browser em inglês.

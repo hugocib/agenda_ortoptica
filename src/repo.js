@@ -2,6 +2,7 @@
 // Cada operação de escrita corre numa transação IMMEDIATE: duas reservas para a mesma vaga
 // ao mesmo tempo nunca ficam ambas aceites.
 import { audit, getSetting } from './db.js';
+import { countDue } from './tasks.js';
 import { checkFree, checkSlot, roundUp } from './domain/slots.js';
 import { BUSY_STATUSES, canTransition, TRANSITIONS } from './domain/status.js';
 import { addDays, addMinutes, nowLocal, todayLocal } from './time.js';
@@ -393,7 +394,7 @@ export function counts(db, today) {
       WHERE e.status = 'realizado' AND (r.id IS NULL OR r.status = 'rascunho')`),
     porFechar: one("SELECT COUNT(*) FROM exams WHERE status = 'agendado' AND starts_at < ?", `${today}T00:00`),
     tarefasOn: getSetting(db, 'tasks_enabled') !== false,
-    tarefas: one("SELECT COUNT(*) FROM tasks WHERE col <> 'feito' AND ((due_date IS NOT NULL AND due_date <= ?) OR (remind_at IS NOT NULL AND remind_at <= ?))", today, nowLocal()),
+    tarefas: countDue(db, today),
     hoje: one("SELECT COUNT(*) FROM exams WHERE status IN ('pendente','agendado','realizado','faltou') AND starts_at >= ? AND starts_at < ?", `${today}T00:00`, `${addDays(today, 1)}T00:00`),
   };
 }

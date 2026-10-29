@@ -140,3 +140,20 @@ export function toIsoDate(s) {
   }
   return t;
 }
+
+/**
+ * Hora escrita à mão, em 24 h: «17:30», «1730», «17h30», «17.30», «9» (09:00), «930» (09:30).
+ * Devolve 'HH:MM', '' (vazio) ou null (inválida).
+ */
+export function normTime(s) {
+  const v = String(s || '').trim().toLowerCase().replace(/\s+/g, '');
+  if (!v) return '';
+  let h;
+  let m;
+  let mm = /^(\d{1,2})[:h.](\d{1,2})?$/.exec(v);
+  if (mm) { h = Number(mm[1]); m = Number(mm[2] || 0); } else if (/^\d{1,4}$/.test(v)) {
+    if (v.length <= 2) { h = Number(v); m = 0; } else { h = Number(v.slice(0, v.length - 2)); m = Number(v.slice(-2)); }
+  } else return null;
+  if (!(h >= 0 && h <= 23 && m >= 0 && m <= 59)) return null;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
