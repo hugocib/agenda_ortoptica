@@ -1,7 +1,7 @@
 import { html, raw } from '../html.js';
 import { getSetting } from '../db.js';
 import {
-  confirmReservation, decideChange, getExam, scheduleContext, scheduleExam, setClinicalInfo, setRequisition, setSiimaBooked, setSiimaRegistered, transitionExam,
+  anticipateExam, confirmReservation, decideChange, getExam, scheduleContext, scheduleExam, setClinicalInfo, setRequisition, setSiimaBooked, setSiimaRegistered, transitionExam,
 } from '../repo.js';
 import { freeSlots, roundUp } from '../domain/slots.js';
 import { canTransition, examTrack, ORIGIN_LABEL, SOURCE_LABEL, sourceOf } from '../domain/status.js';
@@ -34,7 +34,8 @@ export default async function examRoutes(app, { db }) {
     const slotMeta = e.starts_at ? `${fmtDate(e.starts_at)} ${e.starts_at.slice(11)}–${e.ends_at.slice(11)}` : '';
     const performed = {
       meta: e.performed_at ? fmtUtcLocal(e.performed_at) : e.status === 'faltou' ? 'Faltou' : future && e.status === 'agendado' ? 'ainda não chegou o dia' : '',
-      act: html`${can('realizado') ? postButton(`/exames/${id}/realizado`, e.status === 'faltou' ? 'Afinal realizado' : 'Realizado', { kind: e.status === 'faltou' ? '' : 'primary', back }) : ''}${can('faltou') ? postButton(`/exames/${id}/faltou`, 'Faltou', { back, confirm: 'Registar falta?' }) : ''}`,
+      act: html`${can('realizado') ? postButton(`/exames/${id}/realizado`, e.status === 'faltou' ? 'Afinal realizado' : 'Realizado', { kind: e.status === 'faltou' ? '' : 'primary', back }) : ''}${can('faltou') ? postButton(`/exames/${id}/faltou`, 'Faltou', { back, confirm: 'Registar falta?' }) : ''}${future && e.status === 'agendado'
+        ? postButton(`/exames/${id}/antecipar`, 'Realizado hoje (antecipado)', { back, confirm: `Estava marcado para ${fmtDate(e.starts_at)} às ${e.starts_at.slice(11)}. Registar como realizado hoje, à hora atual? A hora marcada fica livre.${source === 'direto' ? ' Lembre-se de ajustar a marcação no Siima.' : ''}` }) : ''}`,
     };
     const report = {
       meta: e.report_status === 'rascunho' ? 'rascunho' : e.report_status === 'validado' ? 'validado' : '',
@@ -201,6 +202,14 @@ export default async function examRoutes(app, { db }) {
       return reply.redirect(res.ok ? withMsg(back, ACTION_MSG[action], id) : withParam(back, 'err', res.reason));
     });
   }
+
+  app.post('/exames/:id/antecipar', async (req, reply) => {
+    const id = idParam(req);
+    if (!id) return reply.callNotFound();
+    const back = safeBack(req.body?.back, `/exames/${id}`);
+    const res = anticipateExam(db, req.user, id);
+    return reply.redirect(res.ok ? withMsg(back, res.source === 'direto' ? 'antecipado_siima' : 'antecipado', id) : withParam(back, 'err', res.reason));
+  });
 
   app.post('/exames/:id/confirmar', async (req, reply) => {
     const id = idParam(req);

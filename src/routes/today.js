@@ -18,7 +18,7 @@ function reportLink(e) {
   return html`<a class="btn" href="/exames/${e.id}/relatorio">${e.report_status === 'rascunho' ? 'Continuar relatório' : 'Fazer relatório'}</a>`;
 }
 
-function orthoActions(e, back = BACK) {
+export function orthoActions(e, back = BACK) {
   return html`${e.status === 'agendado' ? html`${postButton(`/exames/${e.id}/realizado`, 'Realizado', { kind: 'primary', back })}${postButton(`/exames/${e.id}/faltou`, 'Faltou', { back, confirm: 'Registar falta?' })}` : ''}
     ${e.status === 'pendente' ? html`<a class="btn owed" href="#confirmar">Por confirmar</a>` : ''}
     ${reportLink(e)}

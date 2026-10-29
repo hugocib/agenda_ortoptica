@@ -1,15 +1,15 @@
 import { z } from 'zod';
-import { html } from '../html.js';
+import { html, raw } from '../html.js';
 import { audit } from '../db.js';
 import { examsWhere } from '../repo.js';
-import { addDays, fmtDate, fmtDateLong, fmtDateTime, isDate, isTime, mondayOf, nowLocal, toIsoDate, todayLocal } from '../time.js';
+import { addDays, fmtDate, fmtDateLong, fmtDateTime, isDate, isTime, mondayOf, monthName, nowLocal, toIsoDate, todayLocal } from '../time.js';
 import { fmtDuration } from '../domain/tape.js';
 import { cap, dateInput, dayTapeByPeriod, emptyState, examLine, flash, icon, pageHead, postButton, timeSelect } from '../ui.js';
 import { ORIGIN_LABEL, STATUS_LABEL } from '../domain/status.js';
 import { getSetting } from '../db.js';
 import { weekday } from '../time.js';
 
-import { dayData } from './today.js';
+import { dayData, orthoActions } from './today.js';
 import { idParam, send, str } from './util.js';
 
 const BlockSchema = z.object({
@@ -32,42 +32,142 @@ function blockPeriod(b) {
   return `${fmtDateTime(b.starts_at)} → ${fmtDateTime(b.ends_at)}`;
 }
 
+
+const VISTAS = ['dia', 'semana', 'mes'];
+const VISTA_LABEL = { dia: 'Dia', semana: 'Semana', mes: 'Mês' };
+const SHOWN = "e.status IN ('pendente','agendado','realizado','faltou')";
+
+function readVista(cookie) {
+  const m = /(?:^|;\s*)vista_agenda=(dia|semana|mes)/.exec(cookie || '');
+  return m ? m[1] : null;
+}
+
+const nowFor = (date, today) => (date === today ? nowLocal().slice(11) : date < today ? '24:00' : null);
+
+function dayStatus(d, today) {
+  if (!d.windows.length) return 'fora do horário';
+  if (d.date < today) return 'já passou';
+  return d.t.freeMinutes ? html`<span class="free">${fmtDuration(d.t.freeMinutes)} livre</span>` : 'sem vagas';
+}
+
+function weekView(db, ref, today) {
+  const monday = mondayOf(ref);
+  const exams = examsWhere(db, `${SHOWN} AND e.starts_at >= ? AND e.starts_at < ?`, [`${monday}T00:00`, `${addDays(monday, 7)}T00:00`]);
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const date = addDays(monday, i);
+    const dayExams = exams.filter((e) => e.starts_at.startsWith(date));
+    const { t, windows } = dayData(db, date, { exams: dayExams, nowTime: nowFor(date, today) });
+    if (!windows.length && !t.items.length) continue;
+    days.push({ date, windows, t });
+  }
+  return {
+    navLabel: 'Semana',
+    prev: addDays(monday, -7),
+    next: addDays(monday, 7),
+    range: `${fmtDate(monday).slice(0, 5)} – ${fmtDate(addDays(monday, 6))}`,
+    isCurrent: monday === mondayOf(today),
+    body: days.length ? html`<div class="week">${days.map((d) => html`<section class="day-col${d.date === today ? ' today' : ''}" aria-label="${fmtDateLong(d.date)}">
+      <div class="sec-h"><h2><a class="day-link" href="/agenda?vista=dia&data=${d.date}">${cap(fmtDateLong(d.date))}</a></h2><span class="aside">${dayStatus(d, today)}</span></div>
+      ${dayTapeByPeriod(d.t, d.windows, (e) => html`<div class="t-body">${examLine(e, { today })}</div>`, { holdHref: (e) => `/exames/${e.id}` })}
+    </section>`)}</div>` : emptyState('Sem horário de exames nem marcações nesta semana.'),
+  };
+}
+
+function dayView(db, date, today) {
+  const exams = examsWhere(db, `${SHOWN} AND e.starts_at >= ? AND e.starts_at < ?`, [`${date}T00:00`, `${addDays(date, 1)}T00:00`]);
+  const { t, windows } = dayData(db, date, { exams, nowTime: nowFor(date, today) });
+  const back = `/agenda?vista=dia&data=${date}`;
+  const n = exams.filter((e) => e.status !== 'faltou' && e.source !== 'investigacao').length;
+  const r = exams.filter((e) => e.status !== 'faltou' && e.source === 'investigacao').length;
+  const summary = [n ? `${n} ${n === 1 ? 'exame' : 'exames'}` : r ? '' : 'Sem exames', r ? `${r} ${r === 1 ? 'avaliação de investigação' : 'avaliações de investigação'}` : ''].filter(Boolean).join(' · ');
+  return {
+    navLabel: 'Dia',
+    prev: addDays(date, -1),
+    next: addDays(date, 1),
+    range: cap(fmtDateLong(date)),
+    isCurrent: date === today,
+    body: html`<section class="sec day-view${date === today ? ' today' : ''}" aria-label="${fmtDateLong(date)}">
+      <div class="sec-h"><h2>${summary}</h2><span class="aside">${dayStatus({ date, windows, t }, today)}</span></div>
+      ${dayTapeByPeriod(t, windows, (e) => html`<div class="t-body">${examLine(e, { today, actions: orthoActions(e, back) })}</div>`, { emptyText: 'Sem horário de exames nem marcações neste dia.', holdHref: (e) => `/exames/${e.id}` })}
+    </section>`,
+  };
+}
+
+function monthView(db, ref, today) {
+  const first = `${ref.slice(0, 7)}-01`;
+  const [y, m] = [Number(ref.slice(0, 4)), Number(ref.slice(5, 7))];
+  const nextMonth = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`;
+  const prevMonth = m === 1 ? `${y - 1}-12-01` : `${y}-${String(m - 1).padStart(2, '0')}-01`;
+  const start = mondayOf(first);
+  let end = mondayOf(addDays(nextMonth, -1));
+  end = addDays(end, 7);
+  const exams = examsWhere(db, `${SHOWN} AND e.starts_at >= ? AND e.starts_at < ?`, [`${start}T00:00`, `${end}T00:00`], 'e.starts_at, e.id', 3000);
+  const cells = [];
+  for (let d = start; d < end; d = addDays(d, 1)) {
+    const dayExams = exams.filter((e) => e.starts_at.startsWith(d));
+    const { t, windows } = dayData(db, d, { exams: dayExams, nowTime: nowFor(d, today) });
+    const live = dayExams.filter((e) => e.status !== 'faltou');
+    cells.push({
+      date: d,
+      inMonth: d >= first && d < nextMonth,
+      windows,
+      clinical: live.filter((e) => e.source !== 'investigacao'),
+      research: live.filter((e) => e.source === 'investigacao').length,
+      pending: live.filter((e) => e.status === 'pendente' || e.change_kind).length,
+      blocked: t.items.some((i) => i.kind === 'block'),
+      free: d >= today ? t.freeMinutes : 0,
+    });
+  }
+  const weekdays = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+  const total = cells.filter((c) => c.inMonth).reduce((a, c) => a + c.clinical.length, 0);
+  return {
+    navLabel: 'Mês',
+    prev: prevMonth,
+    next: nextMonth,
+    range: `${cap(monthName(m))} de ${y}`,
+    isCurrent: first === `${today.slice(0, 7)}-01`,
+    body: html`<p class="sec-note">${total} ${total === 1 ? 'exame' : 'exames'} neste mês. Toque num dia para o ver.</p>
+      <div class="month" role="grid" aria-label="${monthName(m)} de ${y}">
+        ${weekdays.map((w) => html`<div class="m-wd" role="columnheader">${w}</div>`)}
+        ${cells.map((c) => html`<a role="gridcell" href="/agenda?vista=dia&data=${c.date}" class="m-day${c.inMonth ? '' : ' out'}${c.date === today ? ' today' : ''}${c.windows.length ? ' has-hours' : ''}${c.date < today ? ' past' : ''}" aria-label="${fmtDateLong(c.date)}: ${c.clinical.length} ${c.clinical.length === 1 ? 'exame' : 'exames'}${c.research ? `, ${c.research} ${c.research === 1 ? 'avaliação' : 'avaliações'} de investigação` : ''}">
+          <span class="m-n">${Number(c.date.slice(8, 10))}</span>
+          ${c.clinical.length ? html`<span class="m-ex">${c.clinical.length}<span class="m-l"> ${c.clinical.length === 1 ? 'exame' : 'exames'}</span></span>` : ''}
+          ${c.research ? html`<span class="m-res">${c.research}<span class="m-l"> invest.</span></span>` : ''}
+          ${c.pending ? html`<span class="m-pend">${c.pending}<span class="m-l"> por confirmar</span></span>` : ''}
+          ${c.blocked ? html`<span class="m-block">bloqueado</span>` : c.free && c.windows.length ? html`<span class="m-free">${fmtDuration(c.free)}<span class="m-l"> livre</span></span>` : ''}
+        </a>`)}
+      </div>
+      <p class="m-legend muted small">Número a negro: exames · <span class="m-res">a cor: investigação</span> · <span class="m-pend">por confirmar</span> · <span class="m-block">× bloqueado</span></p>`,
+  };
+}
+
 export default async function agendaRoutes(app, { db }) {
+  // Vistas Dia / Semana / Mês. A última escolhida fica neste dispositivo (cookie).
   app.get('/agenda', async (req, reply) => {
     const today = todayLocal();
-    const monday = mondayOf(isDate(str(req.query.semana)) ? str(req.query.semana) : today);
-    const sunday = addDays(monday, 7);
-    const exams = examsWhere(db, "e.status IN ('pendente','agendado','realizado','faltou') AND e.starts_at >= ? AND e.starts_at < ?", [`${monday}T00:00`, `${sunday}T00:00`]);
-
-    const days = [];
-    for (let i = 0; i < 7; i++) {
-      const date = addDays(monday, i);
-      const dayExams = exams.filter((e) => e.starts_at.startsWith(date));
-      const { t, windows } = dayData(db, date, { exams: dayExams, nowTime: date === today ? nowLocal().slice(11) : date < today ? '24:00' : null });
-      if (!windows.length && !t.items.length) continue;
-      days.push({ date, windows, dayExams, t });
-    }
-    const sundayLast = addDays(monday, 6);
-    const isThisWeek = monday === mondayOf(today);
-
+    const asked = str(req.query.vista);
+    const saved = readVista(req.headers.cookie);
+    const vista = VISTAS.includes(asked) ? asked : str(req.query.semana) ? 'semana' : saved || 'semana';
+    if (VISTAS.includes(asked) && asked !== saved) reply.header('set-cookie', `vista_agenda=${asked}; Path=/agenda; Max-Age=31536000; SameSite=Lax; HttpOnly`);
+    const ref = [str(req.query.data), str(req.query.semana), str(req.query.mes) && `${str(req.query.mes)}-01`].find((d) => isDate(d)) || today;
+    const page = vista === 'dia' ? dayView(db, ref, today) : vista === 'mes' ? monthView(db, ref, today) : weekView(db, ref, today);
     return send(reply, req, {
       title: 'Agenda',
       active: 'agenda',
-      wide: true,
+      wide: vista !== 'dia',
       body: html`${pageHead('Agenda', {
-          sub: html`<nav class="week-nav" aria-label="Semana">
-            <a class="btn ghost" href="/agenda?semana=${addDays(monday, -7)}" aria-label="Semana anterior">${icon('esq', 'ico sm')}</a>
-            <span class="range">${fmtDate(monday).slice(0, 5)} – ${fmtDate(sundayLast)}</span>
-            <a class="btn ghost" href="/agenda?semana=${addDays(monday, 7)}" aria-label="Semana seguinte">${icon('dir', 'ico sm')}</a>
-            ${isThisWeek ? '' : html`<a class="btn" href="/agenda">Esta semana</a>`}</nav>`,
-          actions: html`<a class="btn" href="/agenda/mapa?semana=${monday}">Mapa semanal</a><a class="btn" href="/investigacao/nova">Avaliação de investigação</a><a class="btn" href="/bloqueios">Bloqueios</a>`,
+          sub: html`<div class="agenda-bar">
+            <nav class="seg-tabs" aria-label="Vista">${VISTAS.map((v) => html`<a href="/agenda?vista=${v}&data=${ref}" class="${v === vista ? 'active' : ''}"${v === vista ? raw(' aria-current="page"') : ''}>${VISTA_LABEL[v]}</a>`)}</nav>
+            <nav class="week-nav" aria-label="${page.navLabel}">
+              <a class="btn ghost" href="/agenda?vista=${vista}&data=${page.prev}" aria-label="${page.navLabel} anterior">${icon('esq', 'ico sm')}</a>
+              <span class="range">${page.range}</span>
+              <a class="btn ghost" href="/agenda?vista=${vista}&data=${page.next}" aria-label="${page.navLabel} seguinte">${icon('dir', 'ico sm')}</a>
+              ${page.isCurrent ? '' : html`<a class="btn" href="/agenda?vista=${vista}&data=${today}">${vista === 'dia' ? 'Hoje' : vista === 'mes' ? 'Este mês' : 'Esta semana'}</a>`}</nav>
+            <div class="agenda-acts"><a class="btn" href="/agenda/mapa?semana=${mondayOf(ref)}">Mapa semanal</a><a class="btn" href="/investigacao/nova${vista === 'dia' ? `?data=${ref}` : ''}">Avaliação de investigação</a><a class="btn" href="/bloqueios">Bloqueios</a></div></div>`,
         })}
         ${flash(req.query, req)}
-        ${days.length ? html`<div class="week">${days.map((d) => html`<section class="day-col${d.date === today ? ' today' : ''}" aria-label="${fmtDateLong(d.date)}">
-          <div class="sec-h"><h2>${cap(fmtDateLong(d.date))}</h2>
-            <span class="aside">${!d.windows.length ? 'fora do horário' : d.date < today ? 'já passou' : d.t.freeMinutes ? html`<span class="free">${fmtDuration(d.t.freeMinutes)} livre</span>` : 'sem vagas'}</span></div>
-          ${dayTapeByPeriod(d.t, d.windows, (e) => html`<div class="t-body">${examLine(e, { today })}</div>`, { holdHref: (e) => `/exames/${e.id}` })}
-        </section>`)}</div>` : emptyState('Sem horário de exames nesta semana.')}`,
+        ${page.body}`,
     });
   });
 

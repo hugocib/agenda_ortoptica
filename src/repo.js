@@ -209,6 +209,31 @@ export function transitionExam(db, user, examId, action, { note = '' } = {}) {
   }).immediate();
 }
 
+/**
+ * O doente veio antes do dia marcado: o exame passa para hoje, à hora atual (arredondada a
+ * 5 min), e fica realizado. A hora antiga fica livre. Não verifica sobreposições: já aconteceu.
+ */
+export function anticipateExam(db, user, examId, now = new Date()) {
+  return db.transaction(() => {
+    const exam = db.prepare('SELECT * FROM exams WHERE id = ?').get(examId);
+    if (!exam) return { ok: false, reason: 'nao_existe' };
+    const today = todayLocal(now);
+    if (exam.status !== 'agendado' || !exam.starts_at || exam.starts_at.slice(0, 10) <= today) return { ok: false, reason: 'estado' };
+    const t = nowLocal(now);
+    const min = Math.floor(Number(t.slice(14, 16)) / 5) * 5;
+    let start = `${t.slice(0, 14)}${String(min).padStart(2, '0')}`;
+    // Termina no mesmo dia: perto da meia-noite, começa mais cedo.
+    if (addMinutes(start, exam.minutes).slice(0, 10) !== today) start = addMinutes(`${addDays(today, 1)}T00:00`, -exam.minutes);
+    const end = addMinutes(start, exam.minutes);
+    const res = db.prepare(`UPDATE exams SET status = 'realizado', starts_at = ?, ends_at = ?, performed_at = ${NOW_SQL},
+      change_kind = NULL, change_starts_at = NULL, change_ends_at = NULL, change_by_name = '', change_requested_at = NULL,
+      updated_at = ${NOW_SQL} WHERE id = ? AND status = 'agendado'`).run(start, end, exam.id);
+    if (res.changes !== 1) return { ok: false, reason: 'concorrencia' };
+    audit(db, user.id, 'antecipar_realizado', 'exame', exam.id, { de: exam.starts_at, para: start });
+    return { ok: true, from: exam.starts_at, source: sourceOfExam(db, exam) };
+  }).immediate();
+}
+
 /** Confirma uma reserva do secretariado. O n.º de requisição tem de existir nesse momento. */
 export function confirmReservation(db, user, examId, requisition = '') {
   return db.transaction(() => {
