@@ -1181,3 +1181,49 @@ td.acts-col .btn + .btn { margin-left: 0.25rem; }
   .tk-cols-t select { width: auto; flex: 1 1 0; min-width: 0; }
 }
 .tk-cols-t th { white-space: nowrap; }
+
+/* ---------- Tarefas: checklist, arquivo, lixeira ---------- */
+.tk-check { display: inline-flex; align-items: center; gap: 0.2rem; font-family: var(--f-mono); }
+.tk-check.all { color: var(--ok); font-weight: 700; }
+.tk-checklist { margin-top: 1.5rem; }
+.tk-progress { height: 6px; background: var(--sunk); border-radius: 999px; overflow: hidden; margin: 0.25rem 0 0.75rem; }
+.tk-progress span { display: block; height: 100%; background: var(--ok); transition: width 150ms ease; }
+.tk-progress span.w0 { width: 0%; }
+.tk-progress span.w5 { width: 5%; }
+.tk-progress span.w10 { width: 10%; }
+.tk-progress span.w15 { width: 15%; }
+.tk-progress span.w20 { width: 20%; }
+.tk-progress span.w25 { width: 25%; }
+.tk-progress span.w30 { width: 30%; }
+.tk-progress span.w35 { width: 35%; }
+.tk-progress span.w40 { width: 40%; }
+.tk-progress span.w45 { width: 45%; }
+.tk-progress span.w50 { width: 50%; }
+.tk-progress span.w55 { width: 55%; }
+.tk-progress span.w60 { width: 60%; }
+.tk-progress span.w65 { width: 65%; }
+.tk-progress span.w70 { width: 70%; }
+.tk-progress span.w75 { width: 75%; }
+.tk-progress span.w80 { width: 80%; }
+.tk-progress span.w85 { width: 85%; }
+.tk-progress span.w90 { width: 90%; }
+.tk-progress span.w95 { width: 95%; }
+.tk-progress span.w100 { width: 100%; }
+.tk-items { list-style: none; margin: 0 0 0.6rem; padding: 0; }
+.tk-item { display: flex; align-items: center; gap: 0.6rem; padding: 0.3rem 0; border-bottom: 1px solid var(--rule); }
+.tk-item-check { display: contents; }
+.tk-box { flex: none; width: 1.5rem; height: 1.5rem; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 2px solid var(--ink-3); border-radius: var(--r-xs); background: var(--sheet); color: var(--accent-ink); cursor: pointer; }
+.tk-item.done .tk-box { background: var(--ok); border-color: var(--ok); }
+.tk-box:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tk-item-t { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.tk-item.done .tk-item-t { color: var(--ink-3); text-decoration: line-through; text-decoration-thickness: 1px; }
+.tk-item-del { min-height: 2rem; padding: 0 0.5rem; font-size: 1.2rem; text-decoration: none; color: var(--ink-3); }
+.tk-item-del:hover { color: var(--late); }
+.tk-item-add { display: flex; gap: 0.4rem; max-width: 36rem; }
+.tk-item-add input { min-height: 2.25rem; padding: 0.35rem 0.6rem; }
+.tk-item-add .btn.mini { min-height: 2.25rem; }
+.tk-list .tk-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; flex-wrap: wrap; }
+.tk-row-a { display: flex; gap: 0.35rem; }
+.tk-arch-note { margin: 0.5rem 0.2rem 0; }
+@media (pointer: coarse) { .tk-box { width: 1.9rem; height: 1.9rem; } }
+.btn.link.tk-item-del { text-decoration: none; }

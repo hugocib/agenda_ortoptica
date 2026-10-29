@@ -25,7 +25,7 @@ import reportRoutes from './routes/reports.js';
 import researchRoutes from './routes/research.js';
 import flowRoutes from './routes/flow.js';
 import taskRoutes from './routes/tasks.js';
-import { sendDueReminders } from './tasks.js';
+import { housekeeping, sendDueReminders } from './tasks.js';
 import agendaRoutes from './routes/agenda.js';
 import statsRoutes from './routes/stats.js';
 import adminRoutes from './routes/admin.js';
@@ -154,7 +154,7 @@ async function main() {
   scheduleBackups(db, { dir: defaultConfig.backupDir, keep: defaultConfig.backupKeep, everyHours: defaultConfig.backupEveryHours, log: app.log });
   setInterval(() => purgeExpiredSessions(db, defaultConfig.sessionIdleHours), 3600 * 1000).unref();
   // Lembretes das tarefas: verificados de minuto a minuto.
-  setInterval(() => { sendDueReminders(db, { log: app.log }).catch((err) => app.log.warn({ msg: err?.message }, 'lembretes')); }, 60 * 1000).unref();
+  setInterval(() => { try { housekeeping(db); } catch (err) { app.log.warn({ msg: err?.message }, 'manutenção das tarefas'); } sendDueReminders(db, { log: app.log }).catch((err) => app.log.warn({ msg: err?.message }, 'lembretes')); }, 60 * 1000).unref();
 
   const shutdown = async (signal) => {
     app.log.info({ signal }, 'a terminar');

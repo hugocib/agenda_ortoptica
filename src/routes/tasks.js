@@ -4,7 +4,8 @@ import { z } from 'zod';
 import { html, raw } from '../html.js';
 import { getExam, knownProjects } from '../repo.js';
 import {
-  boardTasks, createTask, deleteTask, firstColumn, getTask, listColumns, MAX_COLS, MIN_COLS, moveTask, saveColumns, taskProjects, tasksEnabled, updateTask,
+  addItem, archivedTasks, archiveTask, ARCHIVE_AFTER_DAYS, boardTasks, createTask, deleteItem, deleteTask, emptyTrash, firstColumn, getTask, listColumns,
+  listItems, MAX_COLS, MIN_COLS, moveTask, purgeTask, restoreTask, saveColumns, setItem, taskProjects, tasksEnabled, trashedTasks, TRASH_DAYS, updateTask,
 } from '../tasks.js';
 import { addDays, fmtDate, isDate, normTime, nowLocal, toIsoDate, todayLocal } from '../time.js';
 import { dateInput, ERRORS, flash, help, icon, pageHead, postButton, timeInput } from '../ui.js';
@@ -45,8 +46,10 @@ function examRef(t) {
 export function taskCard(t, { today = todayLocal(), now = nowLocal(), back = '/tarefas', draggable = true } = {}) {
   return html`<li class="tk-card${t.done ? ' done' : ''}" data-task="${t.id}"${draggable ? raw(' draggable="true"') : ''}>
     <a class="tk-title" href="/tarefas/${t.id}">${t.title}</a>
-    <div class="tk-meta">${t.project ? html`<span class="tk-proj">${t.project}</span>` : ''}${dueBadge(t, today)}${remindBadge(t, now)}${examRef(t)}${t.notes ? html`<span class="tk-notes" title="Tem notas">notas</span>` : ''}</div>
-    ${!t.done ? html`<div class="tk-acts">${postButton(`/tarefas/${t.id}/mover`, 'Feito', { kind: 'mini', back, name: 'col', value: 'feito' })}</div>` : ''}
+    <div class="tk-meta">${t.project ? html`<span class="tk-proj">${t.project}</span>` : ''}${dueBadge(t, today)}${remindBadge(t, now)}${examRef(t)}${t.items_total ? html`<span class="tk-check${t.items_done === t.items_total ? ' all' : ''}" title="Checklist">${icon('certo', 'ico xs')}${t.items_done}/${t.items_total}</span>` : ''}${t.notes ? html`<span class="tk-notes" title="Tem notas">notas</span>` : ''}</div>
+    ${t.archived_at || t.deleted_at ? '' : html`<div class="tk-acts">${!t.done
+      ? postButton(`/tarefas/${t.id}/mover`, 'Feito', { kind: 'mini', back, name: 'col', value: 'feito' })
+      : postButton(`/tarefas/${t.id}/arquivar`, 'Arquivar', { kind: 'mini ghost', back })}</div>`}
   </li>`;
 }
 
@@ -64,6 +67,8 @@ function form(req, db, { task = null, values = {}, errors = {}, exam = null }) {
     active: 'tarefas',
     body: html`${pageHead(title, { back: { href: '/tarefas', label: 'Tarefas' } })}
       ${flash(req.query, req)}
+      ${task?.deleted_at ? html`<div class="notice warn"><p>Esta tarefa está na lixeira e é apagada de vez ${TRASH_DAYS} dias depois de lá ter ido.</p>${postButton(`/tarefas/${task.id}/restaurar`, 'Restaurar', { kind: 'primary' })}</div>`
+        : task?.archived_at ? html`<div class="notice warn"><p>Esta tarefa está no arquivo (fora do quadro).</p>${postButton(`/tarefas/${task.id}/restaurar`, 'Reabrir no quadro', { kind: 'primary' })}</div>` : ''}
       ${Object.keys(errors).length ? html`<div class="notice err" role="alert">Corrija os campos assinalados.</div>` : ''}
       <form method="post" action="${task ? `/tarefas/${task.id}` : '/tarefas'}" class="sheet form-grid guarded" novalidate>
         <label class="span2">Tarefa *<input name="title" required maxlength="200" value="${v.title || ''}"${task ? '' : raw(' autofocus')}${inv('title')}>
@@ -94,7 +99,10 @@ function form(req, db, { task = null, values = {}, errors = {}, exam = null }) {
         <label class="span2">Notas <span class="opt">opcional</span><textarea name="notes" rows="4" maxlength="4000">${v.notes || ''}</textarea>${err('notes')}</label>
         <div class="span2 form-actions"><button class="btn primary" type="submit">${task ? 'Guardar' : 'Criar tarefa'}</button><a class="btn ghost" href="${linked && !task ? `/exames/${linked.id}` : '/tarefas'}">Cancelar</a></div>
       </form>
-      ${task ? html`<div class="more-actions">${postButton(`/tarefas/${task.id}/apagar`, 'Apagar tarefa', { kind: 'danger', confirm: 'Apagar esta tarefa?' })}</div>` : ''}`,
+      ${task ? checklist(db, task) : ''}
+      ${task ? html`<div class="more-actions">
+        ${task.done && !task.archived_at ? postButton(`/tarefas/${task.id}/arquivar`, 'Arquivar', { back: `/tarefas/${task.id}` }) : ''}
+        ${postButton(`/tarefas/${task.id}/apagar`, 'Pôr na lixeira', { kind: 'danger' })}</div>` : ''}`,
   };
 }
 
@@ -138,6 +146,7 @@ export default async function taskRoutes(app, { db }) {
     const back = project ? `/tarefas?projeto=${encodeURIComponent(project)}` : '/tarefas';
     const cols = listColumns(db);
     const first = firstColumn(db);
+    const trashN = db.prepare('SELECT COUNT(*) FROM tasks WHERE deleted_at IS NOT NULL').pluck().get();
     const byCol = Object.fromEntries(cols.map((c) => [c.id, c.is_done ? done : open.filter((t) => t.column_id === c.id)]));
     const late = open.filter((t) => t.due_date && t.due_date < today).length;
     return send(reply, req, {
@@ -147,7 +156,7 @@ export default async function taskRoutes(app, { db }) {
       body: html`${pageHead('Tarefas', {
           sub: html`<span>${open.length} por fazer${late ? html` · <span class="late-txt">${late} ${late === 1 ? 'atrasada' : 'atrasadas'}</span>` : ''}</span>`,
           info: html`<p>Quadro livre para o seu trabalho: protocolos, pedidos a pessoas, o que tiver de fazer sobre um exame. As tarefas nunca mudam exames nem a agenda.</p><p><b>Arraste</b> para mudar de coluna ou de ordem. Com prazo ou lembrete, aparecem em «Hoje» e o lembrete chega como notificação (ative-as em A minha conta).</p><p>É uma experiência: pode desligar o quadro em Administração → Sistema, sem perder as tarefas.</p>`,
-          actions: html`<a class="btn" href="/tarefas/colunas">Colunas</a><a class="btn primary" href="/tarefas/nova${project ? `?projeto=${encodeURIComponent(project)}` : ''}">Nova tarefa</a>`,
+          actions: html`<a class="btn ghost" href="/tarefas/arquivo">Arquivo</a><a class="btn ghost" href="/tarefas/lixeira">Lixeira${trashN ? html` <span class="count">${trashN}</span>` : ''}</a><a class="btn" href="/tarefas/colunas">Colunas</a><a class="btn primary" href="/tarefas/nova${project ? `?projeto=${encodeURIComponent(project)}` : ''}">Nova tarefa</a>`,
         })}
         ${flash(req.query, req)}
         ${projects.length ? html`<nav class="chips tk-filter" aria-label="Filtrar por projeto"><a class="chip${project ? '' : ' active'}" href="/tarefas"${project ? '' : raw(' aria-current="page"')}>Todas</a>${projects.map((p) => html`<a class="chip${p === project ? ' active' : ''}" href="/tarefas?projeto=${encodeURIComponent(p)}"${p === project ? raw(' aria-current="page"') : ''}>${p}</a>`)}</nav>` : ''}
@@ -161,6 +170,7 @@ export default async function taskRoutes(app, { db }) {
             <ul class="tk-cards" data-drop="${c.id}"${c.is_done ? raw(' data-done') : ''}>${byCol[c.id].map((t) => taskCard(t, { today, now, back }))}</ul>
             ${!byCol[c.id].length ? html`<p class="tk-none">${c.is_done ? 'Nada feito ainda.' : '—'}</p>` : ''}
             ${c.is_done && doneTotal > done.length ? html`<p class="muted small">Mostram-se as ${done.length} mais recentes de ${doneTotal}.</p>` : ''}
+            ${c.is_done ? html`<p class="muted small tk-arch-note">Vão para o <a href="/tarefas/arquivo">arquivo</a> ${ARCHIVE_AFTER_DAYS} dias depois de feitas.</p>` : ''}
           </section>`)}
         </div>`,
     });
@@ -277,6 +287,124 @@ export default async function taskRoutes(app, { db }) {
     const id = idParam(req);
     if (!id) return reply.callNotFound();
     deleteTask(db, req.user, id);
-    return reply.redirect('/tarefas?msg=tarefa_apagada');
+    return reply.redirect(`/tarefas?msg=tarefa_lixeira&u=${id}`);
   });
+
+  app.post('/tarefas/:id/arquivar', async (req, reply) => {
+    const id = idParam(req);
+    if (!id) return reply.callNotFound();
+    const res = archiveTask(db, req.user, id);
+    const back = safeBack(req.body?.back, '/tarefas');
+    return reply.redirect(`${back.split('#')[0]}${back.includes('?') ? '&' : '?'}${res.ok ? 'msg=tarefa_arquivada' : 'err=estado'}`);
+  });
+
+  app.post('/tarefas/:id/restaurar', async (req, reply) => {
+    const id = idParam(req);
+    if (!id) return reply.callNotFound();
+    const res = restoreTask(db, req.user, id);
+    return reply.redirect(res.ok ? `/tarefas/${id}?msg=${res.reopened ? 'tarefa_reaberta' : 'tarefa_restaurada'}` : `/tarefas/${id}?err=estado`);
+  });
+
+  app.post('/tarefas/:id/apagar-de-vez', async (req, reply) => {
+    const id = idParam(req);
+    if (!id) return reply.callNotFound();
+    purgeTask(db, req.user, id);
+    return reply.redirect('/tarefas/lixeira?msg=tarefa_apagada');
+  });
+
+  // ---------- Arquivo e lixeira ----------
+  app.get('/tarefas/arquivo', async (req, reply) => {
+    const q = str(req.query.q).trim().slice(0, 80);
+    const project = str(req.query.projeto).slice(0, 120);
+    const rows = archivedTasks(db, { q, project });
+    const projects = taskProjects(db);
+    return send(reply, req, {
+      title: 'Arquivo de tarefas',
+      active: 'tarefas',
+      body: html`${pageHead('Arquivo', { back: { href: '/tarefas', label: 'Tarefas' }, info: `Tarefas fora do quadro. As concluídas vêm para aqui sozinhas ${ARCHIVE_AFTER_DAYS} dias depois de feitas; também pode arquivar à mão. «Reabrir» volta a pô-la no quadro.` })}
+        ${flash(req.query, req)}
+        <form method="get" action="/tarefas/arquivo" class="toolbar" role="search">
+          <label><span class="sr">Pesquisar</span><input type="search" name="q" value="${q}" placeholder="Pesquisar no título, notas e checklist"></label>
+          ${projects.length ? html`<label><span class="sr">Projeto</span><select name="projeto"><option value="">Todos os projetos</option>${projects.map((p) => html`<option${p === project ? raw(' selected') : ''}>${p}</option>`)}</select></label>` : ''}
+          <button class="btn" type="submit">Pesquisar</button>
+          ${q || project ? html`<a href="/tarefas/arquivo">limpar</a>` : ''}
+        </form>
+        ${rows.length ? html`<ul class="list tk-list">${rows.map((t) => html`<li class="tk-row">
+            <div><a class="tk-title" href="/tarefas/${t.id}">${t.title}</a>
+              <div class="tk-meta">${t.project ? html`<span class="tk-proj">${t.project}</span>` : ''}<span>${t.done_at ? `feita a ${fmtDate(t.done_at.slice(0, 10))}` : `arquivada a ${fmtDate(t.archived_at.slice(0, 10))}`}</span>${t.items_total ? html`<span class="tk-check">${icon('certo', 'ico xs')}${t.items_done}/${t.items_total}</span>` : ''}${examRef(t)}</div></div>
+            <div class="tk-row-a">${postButton(`/tarefas/${t.id}/restaurar`, 'Reabrir', { kind: 'mini' })}${postButton(`/tarefas/${t.id}/apagar`, 'Lixeira', { kind: 'mini ghost' })}</div>
+          </li>`)}</ul>`
+          : html`<p class="empty">${q || project ? 'Nada encontrado no arquivo.' : 'O arquivo está vazio.'}</p>`}`,
+    });
+  });
+
+  app.get('/tarefas/lixeira', async (req, reply) => {
+    const rows = trashedTasks(db);
+    const left = (t) => Math.max(0, TRASH_DAYS - Math.floor((Date.now() - Date.parse(t.deleted_at)) / 86400000));
+    return send(reply, req, {
+      title: 'Lixeira de tarefas',
+      active: 'tarefas',
+      body: html`${pageHead('Lixeira', { back: { href: '/tarefas', label: 'Tarefas' }, info: `As tarefas apagadas ficam aqui ${TRASH_DAYS} dias e depois são apagadas de vez.`,
+          actions: rows.length ? postButton('/tarefas/lixeira/esvaziar', 'Esvaziar lixeira', { kind: 'danger', confirm: `Apagar de vez ${rows.length} ${rows.length === 1 ? 'tarefa' : 'tarefas'}? Não dá para desfazer.` }) : '' })}
+        ${flash(req.query, req)}
+        ${rows.length ? html`<ul class="list tk-list">${rows.map((t) => html`<li class="tk-row">
+            <div><span class="tk-title">${t.title}</span>
+              <div class="tk-meta">${t.project ? html`<span class="tk-proj">${t.project}</span>` : ''}<span>apagada de vez daqui a ${left(t)} ${left(t) === 1 ? 'dia' : 'dias'}</span></div></div>
+            <div class="tk-row-a">${postButton(`/tarefas/${t.id}/restaurar`, 'Restaurar', { kind: 'mini' })}${postButton(`/tarefas/${t.id}/apagar-de-vez`, 'Apagar de vez', { kind: 'mini danger', confirm: 'Apagar de vez esta tarefa? Não dá para desfazer.' })}</div>
+          </li>`)}</ul>` : html`<p class="empty clear">A lixeira está vazia.</p>`}`,
+    });
+  });
+
+  app.post('/tarefas/lixeira/esvaziar', async (req, reply) => {
+    emptyTrash(db, req.user);
+    return reply.redirect('/tarefas/lixeira?msg=lixeira_vazia');
+  });
+
+  // ---------- Checklist ----------
+  const itemBack = (id) => `/tarefas/${id}#checklist`;
+  app.post('/tarefas/:id/itens', async (req, reply) => {
+    const id = idParam(req);
+    if (!id) return reply.callNotFound();
+    const res = addItem(db, id, str(req.body?.text));
+    return reply.redirect(res.ok ? itemBack(id) : `/tarefas/${id}?err=${res.reason || 'dados_invalidos'}#checklist`);
+  });
+  app.post('/tarefas/:id/itens/:item', async (req, reply) => {
+    const id = idParam(req);
+    const item = Number.parseInt(req.params.item, 10);
+    if (!id || !item) return reply.callNotFound();
+    const done = req.body?.done === undefined ? null : str(req.body.done) === '1';
+    const text = req.body?.text === undefined ? null : str(req.body.text);
+    const res = setItem(db, id, item, { done, text });
+    if (str(req.body?.ajax) === '1') return reply.code(res.ok ? 200 : 400).send({ ok: res.ok });
+    return reply.redirect(itemBack(id));
+  });
+  app.post('/tarefas/:id/itens/:item/apagar', async (req, reply) => {
+    const id = idParam(req);
+    const item = Number.parseInt(req.params.item, 10);
+    if (!id || !item) return reply.callNotFound();
+    deleteItem(db, id, item);
+    return reply.redirect(itemBack(id));
+  });
+}
+
+/** Checklist da tarefa: marcar, acrescentar, apagar. Com JS, marcar não recarrega a página. */
+function checklist(db, task) {
+  const items = listItems(db, task.id);
+  const done = items.filter((i) => i.done).length;
+  return html`<section class="sec tk-checklist" id="checklist" aria-labelledby="h-check">
+    <div class="sec-h"><h2 id="h-check">Checklist</h2>${items.length ? html`<span class="count" data-check-count>${done}/${items.length}</span>` : ''}</div>
+    ${items.length ? html`<div class="tk-progress" aria-hidden="true"><span data-check-bar class="w${Math.round((done / items.length) * 20) * 5}"></span></div>` : ''}
+    <ul class="tk-items" data-checklist="${task.id}">${items.map((i) => html`<li class="tk-item${i.done ? ' done' : ''}">
+      <form method="post" action="/tarefas/${task.id}/itens/${i.id}" class="tk-item-check">
+        <input type="hidden" name="done" value="${i.done ? '0' : '1'}">
+        <button type="submit" class="tk-box" role="checkbox" aria-checked="${i.done ? 'true' : 'false'}" aria-label="${i.text}" data-item="${i.id}">${i.done ? icon('certo', 'ico xs') : ''}</button>
+      </form>
+      <span class="tk-item-t">${i.text}</span>
+      <form method="post" action="/tarefas/${task.id}/itens/${i.id}/apagar" class="inline"><button type="submit" class="btn link tk-item-del" aria-label="Apagar item: ${i.text}" title="Apagar item">×</button></form>
+    </li>`)}</ul>
+    <form method="post" action="/tarefas/${task.id}/itens" class="tk-item-add">
+      <label class="sr" for="tk-item-new">Novo item</label><input id="tk-item-new" name="text" maxlength="200" required placeholder="+ Acrescentar item">
+      <button class="btn mini" type="submit">Acrescentar</button>
+    </form>
+  </section>`;
 }

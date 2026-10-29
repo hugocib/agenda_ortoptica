@@ -593,4 +593,35 @@
       (up || down).focus();
     });
   });
+
+  // Checklist das tarefas: marcar/desmarcar sem recarregar a página.
+  document.querySelectorAll('[data-checklist]').forEach(function (list) {
+    var sec = list.closest('.tk-checklist');
+    var update = function () {
+      var all = list.querySelectorAll('.tk-item').length;
+      var done = list.querySelectorAll('.tk-item.done').length;
+      var cnt = sec.querySelector('[data-check-count]');
+      if (cnt) cnt.textContent = done + '/' + all;
+      var bar = sec.querySelector('[data-check-bar]');
+      if (bar) bar.className = 'w' + (all ? Math.round(done / all * 20) * 5 : 0);
+    };
+    list.addEventListener('submit', function (ev) {
+      var form = ev.target;
+      if (!form.classList.contains('tk-item-check')) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      var input = form.querySelector('[name=done]');
+      var li = form.closest('.tk-item');
+      var box = form.querySelector('.tk-box');
+      var on = input.value === '1';
+      li.classList.toggle('done', on);
+      box.setAttribute('aria-checked', on ? 'true' : 'false');
+      box.innerHTML = on ? '<svg class="ico xs" aria-hidden="true" focusable="false"><use href="' + (document.querySelector('use') ? document.querySelector('use').getAttribute('href').split('#')[0] : '/static/icons.svg') + '#i-certo"></use></svg>' : '';
+      input.value = on ? '0' : '1';
+      update();
+      fetch(form.action, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ done: on ? '1' : '0', ajax: '1' }) })
+        .then(function (r) { if (!r.ok) throw new Error(); })
+        .catch(function () { window.location.reload(); });
+    }, true);
+  });
 })();

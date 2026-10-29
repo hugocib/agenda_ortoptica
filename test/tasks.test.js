@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { makeApp, login, post, get } from './helpers.js';
 import { getSetting } from '../src/db.js';
 import { saveSubscription } from '../src/push.js';
-import { sendDueReminders } from '../src/tasks.js';
+import { housekeeping, sendDueReminders } from '../src/tasks.js';
 import { addDays, todayLocal } from '../src/time.js';
 
 const dmy = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
@@ -59,8 +59,9 @@ test('tarefas: criar, mover com ordem, feito, editar e apagar', async () => {
   assert.equal((await post(app, `/tarefas/${a}`, hugo, { title: 'x', column_id: '1', remind_date: dmy(tomorrow), remind_time: '' })).statusCode, 400);
 
   r = await post(app, `/tarefas/${c}/apagar`, hugo, {});
-  assert.match(r.headers.location, /msg=tarefa_apagada/);
-  assert.equal(task(db, c), undefined);
+  assert.match(r.headers.location, new RegExp(`msg=tarefa_lixeira&u=${c}`));
+  assert.ok(task(db, c).deleted_at);
+  assert.ok(!(await get(app, '/tarefas', hugo)).body.includes('Enviar preçário'));
 });
 
 test('tarefas: prazo de hoje aparece em «Hoje» e no contador; ligação a exame sem mudar o exame', async () => {
@@ -170,4 +171,87 @@ test('tarefas: colunas editáveis (nome, ordem, número, concluídas) sem perder
   const board = await get(app, '/tarefas', hugo);
   assert.match(board.body, /A decorrer/);
   assert.match(board.body, /data-drop="5" data-done/);
+});
+
+test('tarefas: lixeira (restaurar, apagar de vez, esvaziar, 30 dias) e arquivo (14 dias, pesquisa, reabrir)', async () => {
+  const { app, db } = await makeApp();
+  const hugo = await login(app, 'hugo');
+  for (const t of ['Lixo 1', 'Lixo 2', 'Feita antiga', 'Feita recente']) await post(app, '/tarefas', hugo, { title: t, project: t.startsWith('Feita') ? 'MEG' : '' });
+  const id = (t) => db.prepare('SELECT id FROM tasks WHERE title = ?').pluck().get(t);
+  // Lixeira
+  await post(app, `/tarefas/${id('Lixo 1')}/apagar`, hugo, {});
+  await post(app, `/tarefas/${id('Lixo 2')}/apagar`, hugo, {});
+  let page = await get(app, '/tarefas/lixeira', hugo);
+  assert.match(page.body, /Lixo 1/);
+  assert.match(page.body, /daqui a 30 dias/);
+  assert.match((await get(app, '/tarefas', hugo)).body, /Lixeira <span class="count">2<\/span>/);
+  let r = await post(app, `/tarefas/${id('Lixo 1')}/restaurar`, hugo, {});
+  assert.match(r.headers.location, /msg=tarefa_restaurada/);
+  assert.equal(task(db, id('Lixo 1')).deleted_at, null);
+  assert.match((await get(app, '/tarefas', hugo)).body, /Lixo 1/);
+  await post(app, `/tarefas/${id('Lixo 2')}/apagar-de-vez`, hugo, {});
+  assert.equal(id('Lixo 2'), undefined);
+  // Apagar de vez só funciona para o que está na lixeira
+  await post(app, `/tarefas/${id('Lixo 1')}/apagar-de-vez`, hugo, {});
+  assert.ok(id('Lixo 1'));
+  await post(app, `/tarefas/${id('Lixo 1')}/apagar`, hugo, {});
+  await post(app, '/tarefas/lixeira/esvaziar', hugo, {});
+  assert.equal(id('Lixo 1'), undefined);
+
+  // Arquivo automático das concluídas há mais de 14 dias
+  for (const t of ['Feita antiga', 'Feita recente']) await post(app, `/tarefas/${id(t)}/mover`, hugo, { col: 'feito', back: '/tarefas' });
+  db.prepare("UPDATE tasks SET done_at = strftime('%Y-%m-%dT%H:%M:%fZ','now','-20 days') WHERE title = 'Feita antiga'").run();
+  assert.deepEqual(housekeeping(db), { archived: 1, purged: 0 });
+  assert.ok(task(db, id('Feita antiga')).archived_at);
+  assert.equal(task(db, id('Feita recente')).archived_at, null);
+  const board = await get(app, '/tarefas', hugo);
+  assert.ok(!board.body.includes('Feita antiga'));
+  assert.match(board.body, /Feita recente/);
+  // Arquivar à mão, pesquisar, reabrir
+  await post(app, `/tarefas/${id('Feita recente')}/arquivar`, hugo, { back: '/tarefas' });
+  page = await get(app, '/tarefas/arquivo?q=antiga', hugo);
+  assert.match(page.body, /Feita antiga/);
+  assert.ok(!page.body.includes('Feita recente'));
+  assert.match((await get(app, '/tarefas/arquivo?projeto=MEG', hugo)).body, /Feita recente/);
+  r = await post(app, `/tarefas/${id('Feita antiga')}/restaurar`, hugo, {});
+  assert.match(r.headers.location, /msg=tarefa_reaberta/);
+  const back = task(db, id('Feita antiga'));
+  assert.equal(back.archived_at, null);
+  assert.equal(back.done_at, null);
+  assert.equal(back.column_id, 1);
+
+  // Lixeira antiga apagada de vez ao fim de 30 dias
+  await post(app, `/tarefas/${id('Feita antiga')}/apagar`, hugo, {});
+  db.prepare("UPDATE tasks SET deleted_at = strftime('%Y-%m-%dT%H:%M:%fZ','now','-31 days') WHERE title = 'Feita antiga'").run();
+  assert.equal(housekeeping(db).purged, 1);
+  assert.equal(id('Feita antiga'), undefined);
+});
+
+test('tarefas: checklist com progresso no cartão e pesquisa no arquivo', async () => {
+  const { app, db } = await makeApp();
+  const hugo = await login(app, 'hugo');
+  await post(app, '/tarefas', hugo, { title: 'Preparar sessão MEG' });
+  const id = db.prepare('SELECT id FROM tasks').pluck().get();
+  for (const t of ['Calibrar', 'Imprimir consentimento', 'Confirmar sala']) await post(app, `/tarefas/${id}/itens`, hugo, { text: t });
+  assert.equal((await post(app, `/tarefas/${id}/itens`, hugo, { text: '  ' })).headers.location.includes('err='), true);
+  const items = db.prepare('SELECT id FROM task_items WHERE task_id = ? ORDER BY position').pluck().all(id);
+  assert.equal(items.length, 3);
+  let r = await post(app, `/tarefas/${id}/itens/${items[0]}`, hugo, { done: '1', ajax: '1' });
+  assert.deepEqual(JSON.parse(r.body), { ok: true });
+  await post(app, `/tarefas/${id}/itens/${items[1]}`, hugo, { done: '1' });
+  assert.match((await get(app, '/tarefas', hugo)).body, /2\/3/);
+  const page = await get(app, `/tarefas/${id}`, hugo);
+  assert.match(page.body, /data-check-count>2\/3/);
+  assert.match(page.body, /aria-checked="true"/);
+  assert.match(page.body, /class="w65"/);
+  await post(app, `/tarefas/${id}/itens/${items[2]}/apagar`, hugo, {});
+  assert.match((await get(app, '/tarefas', hugo)).body, /tk-check all[^>]*>.*?2\/2/s);
+  // Item de outra tarefa: não mexe
+  assert.equal((await post(app, `/tarefas/9999/itens/${items[0]}`, hugo, { done: '0', ajax: '1' })).statusCode, 400);
+  // Pesquisa no arquivo encontra pelo texto da checklist; apagar a tarefa apaga os itens
+  await post(app, `/tarefas/${id}/arquivar`, hugo, {});
+  assert.match((await get(app, '/tarefas/arquivo?q=consentimento', hugo)).body, /Preparar sessão MEG/);
+  await post(app, `/tarefas/${id}/apagar`, hugo, {});
+  await post(app, '/tarefas/lixeira/esvaziar', hugo, {});
+  assert.equal(db.prepare('SELECT COUNT(*) FROM task_items').pluck().get(), 0);
 });

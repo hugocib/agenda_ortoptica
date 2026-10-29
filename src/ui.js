@@ -66,7 +66,12 @@ export const MESSAGES = {
   ics: 'Novo endereço do calendário criado. O anterior deixou de funcionar.',
   tarefa: 'Tarefa criada.',
   tarefa_guardada: 'Tarefa guardada.',
-  tarefa_apagada: 'Tarefa apagada.',
+  tarefa_apagada: 'Tarefa apagada de vez.',
+  tarefa_lixeira: 'Tarefa na lixeira (pode restaurá-la durante 30 dias).',
+  tarefa_arquivada: 'Tarefa arquivada.',
+  tarefa_reaberta: 'Tarefa reaberta no quadro.',
+  tarefa_restaurada: 'Tarefa restaurada.',
+  lixeira_vazia: 'Lixeira esvaziada.',
   tarefa_feita: 'Tarefa marcada como feita.',
   tarefas_on: 'Quadro de tarefas ligado.',
   colunas: 'Colunas guardadas.',
@@ -83,6 +88,7 @@ const UNDO = {
   siima_marcado: (id) => `/exames/${id}/siima-marcado/desfazer`,
   siima_registado: (id) => `/exames/${id}/siima-registado/desfazer`,
   realizado: (id) => `/exames/${id}/anular_realizado`,
+  tarefa_lixeira: (id) => `/tarefas/${id}/restaurar`,
 };
 
 export const ERRORS = {
@@ -104,6 +110,7 @@ export const ERRORS = {
   backup: 'Não foi possível criar a cópia de segurança. Veja os registos do servidor.',
   tipo_com_ficha: 'A ficha desta avaliação já foi começada: o tipo de avaliação já não pode mudar.',
   logo_invalido: 'O logotipo tem de ser uma imagem PNG, JPG, WebP ou SVG com até 200 KB.',
+  itens_limite: 'Uma checklist pode ter até 50 itens.',
   colunas_numero: 'O quadro tem de ter entre 2 e 8 colunas.',
   colunas_nome: 'Cada coluna precisa de um nome (até 40 caracteres).',
   colunas_repetidas: 'Há colunas com o mesmo nome.',

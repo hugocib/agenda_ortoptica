@@ -21,7 +21,14 @@ export const doneColumn = (db) => db.prepare('SELECT * FROM task_columns WHERE i
 export const firstColumn = (db) => db.prepare('SELECT * FROM task_columns WHERE is_done = 0 ORDER BY position, id LIMIT 1').get() || doneColumn(db);
 const getColumn = (db, id) => db.prepare('SELECT * FROM task_columns WHERE id = ?').get(Number(id) || 0);
 
-const SELECT = `SELECT t.*, c.name AS col_name, c.is_done AS done, e.starts_at AS exam_starts_at, et.name AS exam_type_name
+// Ativas = nem arquivadas nem na lixeira.
+const ACTIVE = 't.archived_at IS NULL AND t.deleted_at IS NULL';
+export const ARCHIVE_AFTER_DAYS = 14;
+export const TRASH_DAYS = 30;
+
+const SELECT = `SELECT t.*, c.name AS col_name, c.is_done AS done, e.starts_at AS exam_starts_at, et.name AS exam_type_name,
+  (SELECT COUNT(*) FROM task_items i WHERE i.task_id = t.id) AS items_total,
+  (SELECT COUNT(*) FROM task_items i WHERE i.task_id = t.id AND i.done = 1) AS items_done
   FROM tasks t JOIN task_columns c ON c.id = t.column_id
   LEFT JOIN exams e ON e.id = t.exam_id LEFT JOIN exam_types et ON et.id = e.exam_type_id`;
 
@@ -33,33 +40,33 @@ export function getTask(db, id) {
 export function boardTasks(db, { project = '', doneLimit = 20 } = {}) {
   const where = project ? 'AND t.project = ?' : '';
   const args = project ? [project] : [];
-  const open = db.prepare(`${SELECT} WHERE c.is_done = 0 ${where} ORDER BY t.position, t.id`).all(...args);
-  const done = db.prepare(`${SELECT} WHERE c.is_done = 1 ${where} ORDER BY t.done_at DESC, t.id DESC LIMIT ${Number(doneLimit)}`).all(...args);
-  const doneTotal = db.prepare(`SELECT COUNT(*) FROM tasks t JOIN task_columns c ON c.id = t.column_id WHERE c.is_done = 1 ${where}`).pluck().get(...args);
+  const open = db.prepare(`${SELECT} WHERE ${ACTIVE} AND c.is_done = 0 ${where} ORDER BY t.position, t.id`).all(...args);
+  const done = db.prepare(`${SELECT} WHERE ${ACTIVE} AND c.is_done = 1 ${where} ORDER BY t.done_at DESC, t.id DESC LIMIT ${Number(doneLimit)}`).all(...args);
+  const doneTotal = db.prepare(`SELECT COUNT(*) FROM tasks t JOIN task_columns c ON c.id = t.column_id WHERE ${ACTIVE} AND c.is_done = 1 ${where}`).pluck().get(...args);
   return { open, done, doneTotal };
 }
 
 export function tasksForExam(db, examId) {
-  return db.prepare(`${SELECT} WHERE t.exam_id = ? ORDER BY c.is_done, t.position, t.id`).all(examId);
+  return db.prepare(`${SELECT} WHERE t.exam_id = ? AND t.deleted_at IS NULL ORDER BY t.archived_at IS NOT NULL, c.is_done, t.position, t.id`).all(examId);
 }
 
 export function taskProjects(db) {
-  return db.prepare("SELECT project FROM tasks WHERE project <> '' GROUP BY project ORDER BY MAX(updated_at) DESC LIMIT 40").pluck().all();
+  return db.prepare("SELECT project FROM tasks WHERE project <> '' AND deleted_at IS NULL GROUP BY project ORDER BY MAX(updated_at) DESC LIMIT 40").pluck().all();
 }
 
 /** Por fazer com prazo até hoje, ou com lembrete que já passou (para «Hoje» e o contador). */
 export function dueTasks(db, today, now = nowLocal()) {
-  return db.prepare(`${SELECT} WHERE c.is_done = 0 AND ((t.due_date IS NOT NULL AND t.due_date <= ?) OR (t.remind_at IS NOT NULL AND t.remind_at <= ?))
+  return db.prepare(`${SELECT} WHERE ${ACTIVE} AND c.is_done = 0 AND ((t.due_date IS NOT NULL AND t.due_date <= ?) OR (t.remind_at IS NOT NULL AND t.remind_at <= ?))
     ORDER BY COALESCE(t.due_date, substr(t.remind_at, 1, 10)), t.position`).all(today, now);
 }
 
 export function countDue(db, today, now = nowLocal()) {
-  return db.prepare(`SELECT COUNT(*) FROM tasks WHERE column_id NOT IN ${DONE_IDS}
+  return db.prepare(`SELECT COUNT(*) FROM tasks WHERE column_id NOT IN ${DONE_IDS} AND archived_at IS NULL AND deleted_at IS NULL
     AND ((due_date IS NOT NULL AND due_date <= ?) OR (remind_at IS NOT NULL AND remind_at <= ?))`).pluck().get(today, now);
 }
 
 function nextPosition(db, colId) {
-  return db.prepare('SELECT COALESCE(MAX(position), 0) + 1 FROM tasks WHERE column_id = ?').pluck().get(colId);
+  return db.prepare('SELECT COALESCE(MAX(position), 0) + 1 FROM tasks WHERE column_id = ? AND archived_at IS NULL AND deleted_at IS NULL').pluck().get(colId);
 }
 
 /** data: { title, notes, column_id, project, due_date, remind_at, exam_id } (já validados). */
@@ -105,23 +112,120 @@ export function moveTask(db, user, id, colId, orderedIds = []) {
     if (!t) return { ok: false, reason: 'nao_existe' };
     db.prepare(`UPDATE tasks SET column_id = ?, done_at = CASE WHEN ? = 1 THEN COALESCE(done_at, ${NOW_SQL}) ELSE NULL END,
       position = ?, updated_at = ${NOW_SQL} WHERE id = ?`).run(col.id, col.is_done, nextPosition(db, col.id), id);
-    const inCol = new Set(db.prepare('SELECT id FROM tasks WHERE column_id = ?').pluck().all(col.id));
+    const inCol = new Set(db.prepare('SELECT id FROM tasks WHERE column_id = ? AND archived_at IS NULL AND deleted_at IS NULL').pluck().all(col.id));
     const order = [...new Set(orderedIds.map(Number).filter((n) => inCol.has(n)))];
     if (!order.includes(id)) order.push(id);
     const up = db.prepare('UPDATE tasks SET position = ? WHERE id = ?');
     order.forEach((tid, i) => up.run(i + 1, tid));
     // As que não vieram na lista ficam no fim, pela ordem que tinham.
-    const rest = db.prepare(`SELECT id FROM tasks WHERE column_id = ? AND id NOT IN (${order.map(() => '?').join(',')}) ORDER BY position`).pluck().all(col.id, ...order);
+    const rest = db.prepare(`SELECT id FROM tasks WHERE column_id = ? AND archived_at IS NULL AND deleted_at IS NULL AND id NOT IN (${order.map(() => '?').join(',')}) ORDER BY position`).pluck().all(col.id, ...order);
     rest.forEach((tid, i) => up.run(order.length + i + 1, tid));
     if (t.column_id !== col.id) audit(db, user.id, 'mover', 'tarefa', id, { de: t.column_id, para: col.id });
     return { ok: true, done: Boolean(col.is_done) };
   })();
 }
 
+/** Apagar = ir para a lixeira (restaurável durante 30 dias). */
 export function deleteTask(db, user, id) {
-  const res = db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
-  if (res.changes) audit(db, user.id, 'apagar', 'tarefa', id);
+  const res = db.prepare(`UPDATE tasks SET deleted_at = ${NOW_SQL} WHERE id = ? AND deleted_at IS NULL`).run(id);
+  if (res.changes) audit(db, user.id, 'lixeira', 'tarefa', id);
   return { ok: res.changes === 1 };
+}
+
+export function restoreTask(db, user, id) {
+  return db.transaction(() => {
+    const t = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
+    if (!t || (!t.deleted_at && !t.archived_at)) return { ok: false, reason: 'estado' };
+    // Volta para a coluna onde estava (ou para a primeira, se a coluna já não existir), no fim.
+    const col = getColumn(db, t.column_id) || firstColumn(db);
+    const reopen = Boolean(t.archived_at && !t.deleted_at);
+    const target = reopen && col.is_done ? firstColumn(db) : col;
+    db.prepare(`UPDATE tasks SET deleted_at = NULL, archived_at = ${reopen ? 'NULL' : 'archived_at'}, column_id = ?, position = ?,
+      done_at = CASE WHEN ? = 1 THEN done_at ELSE NULL END, updated_at = ${NOW_SQL} WHERE id = ?`)
+      .run(target.id, nextPosition(db, target.id), target.is_done, id);
+    audit(db, user.id, reopen ? 'reabrir' : 'restaurar', 'tarefa', id);
+    return { ok: true, reopened: reopen };
+  })();
+}
+
+export function archiveTask(db, user, id) {
+  const res = db.prepare(`UPDATE tasks SET archived_at = ${NOW_SQL} WHERE id = ? AND archived_at IS NULL AND deleted_at IS NULL`).run(id);
+  if (res.changes) audit(db, user.id, 'arquivar', 'tarefa', id);
+  return { ok: res.changes === 1 };
+}
+
+export function purgeTask(db, user, id) {
+  const res = db.prepare('DELETE FROM tasks WHERE id = ? AND deleted_at IS NOT NULL').run(id);
+  if (res.changes) audit(db, user.id, 'apagar_de_vez', 'tarefa', id);
+  return { ok: res.changes === 1 };
+}
+
+export function emptyTrash(db, user) {
+  const n = db.prepare('DELETE FROM tasks WHERE deleted_at IS NOT NULL').run().changes;
+  if (n) audit(db, user.id, 'esvaziar_lixeira', 'tarefa', null, { n });
+  return n;
+}
+
+/** Arquivo: pesquisa no título, notas e itens da checklist; mais recentes primeiro. */
+export function archivedTasks(db, { q = '', project = '', limit = 200 } = {}) {
+  const where = ['t.archived_at IS NOT NULL', 't.deleted_at IS NULL'];
+  const args = [];
+  if (project) { where.push('t.project = ?'); args.push(project); }
+  if (q) {
+    where.push("(t.title LIKE ? ESCAPE '\\' OR t.notes LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM task_items i WHERE i.task_id = t.id AND i.text LIKE ? ESCAPE '\\'))");
+    const like = `%${q.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
+    args.push(like, like, like);
+  }
+  return db.prepare(`${SELECT} WHERE ${where.join(' AND ')} ORDER BY t.archived_at DESC LIMIT ${Number(limit)}`).all(...args);
+}
+
+export function trashedTasks(db) {
+  return db.prepare(`${SELECT} WHERE t.deleted_at IS NOT NULL ORDER BY t.deleted_at DESC`).all();
+}
+
+/** Manutenção (de minuto a minuto, junto com os lembretes): arquiva concluídas antigas e esvazia a lixeira antiga. */
+export function housekeeping(db, now = new Date()) {
+  const archiveBefore = new Date(now.getTime() - ARCHIVE_AFTER_DAYS * 86400000).toISOString();
+  const purgeBefore = new Date(now.getTime() - TRASH_DAYS * 86400000).toISOString();
+  const archived = db.prepare(`UPDATE tasks SET archived_at = ${NOW_SQL}
+    WHERE archived_at IS NULL AND deleted_at IS NULL AND column_id IN ${DONE_IDS} AND done_at IS NOT NULL AND done_at < ?`).run(archiveBefore).changes;
+  const purged = db.prepare('DELETE FROM tasks WHERE deleted_at IS NOT NULL AND deleted_at < ?').run(purgeBefore).changes;
+  return { archived, purged };
+}
+
+// ---------- Checklist ----------
+
+export function listItems(db, taskId) {
+  return db.prepare('SELECT * FROM task_items WHERE task_id = ? ORDER BY position, id').all(taskId);
+}
+
+export function addItem(db, taskId, text) {
+  const v = String(text || '').trim().slice(0, 200);
+  if (!v || !db.prepare('SELECT 1 FROM tasks WHERE id = ?').get(taskId)) return { ok: false };
+  if (db.prepare('SELECT COUNT(*) FROM task_items WHERE task_id = ?').pluck().get(taskId) >= 50) return { ok: false, reason: 'itens_limite' };
+  const pos = db.prepare('SELECT COALESCE(MAX(position), 0) + 1 FROM task_items WHERE task_id = ?').pluck().get(taskId);
+  const id = Number(db.prepare('INSERT INTO task_items (task_id, text, position) VALUES (?, ?, ?)').run(taskId, v, pos).lastInsertRowid);
+  db.prepare(`UPDATE tasks SET updated_at = ${NOW_SQL} WHERE id = ?`).run(taskId);
+  return { ok: true, id };
+}
+
+export function setItem(db, taskId, itemId, { done = null, text = null } = {}) {
+  const sets = [];
+  const args = [];
+  if (done !== null) { sets.push('done = ?'); args.push(done ? 1 : 0); }
+  if (text !== null) {
+    const v = String(text).trim().slice(0, 200);
+    if (!v) return { ok: false };
+    sets.push('text = ?'); args.push(v);
+  }
+  if (!sets.length) return { ok: false };
+  const res = db.prepare(`UPDATE task_items SET ${sets.join(', ')} WHERE id = ? AND task_id = ?`).run(...args, itemId, taskId);
+  if (res.changes) db.prepare(`UPDATE tasks SET updated_at = ${NOW_SQL} WHERE id = ?`).run(taskId);
+  return { ok: res.changes === 1 };
+}
+
+export function deleteItem(db, taskId, itemId) {
+  return { ok: db.prepare('DELETE FROM task_items WHERE id = ? AND task_id = ?').run(itemId, taskId).changes === 1 };
 }
 
 // ---------- Colunas ----------
@@ -190,7 +294,8 @@ function saveColumnsTx(db, user, cols, doneIndex, keep) {
  */
 export async function sendDueReminders(db, { now = nowLocal(), log = null, send } = {}) {
   if (!tasksEnabled(db)) return 0;
-  const due = db.prepare(`SELECT * FROM tasks WHERE reminded_at IS NULL AND remind_at IS NOT NULL AND remind_at <= ? AND column_id NOT IN ${DONE_IDS}`).all(now);
+  const due = db.prepare(`SELECT * FROM tasks WHERE reminded_at IS NULL AND remind_at IS NOT NULL AND remind_at <= ? AND column_id NOT IN ${DONE_IDS}
+    AND archived_at IS NULL AND deleted_at IS NULL`).all(now);
   let n = 0;
   for (const t of due) {
     // Marca primeiro: um erro no envio não deve repetir o lembrete de minuto a minuto.
