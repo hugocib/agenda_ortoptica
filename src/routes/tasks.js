@@ -61,6 +61,7 @@ function form(req, db, { task = null, values = {}, errors = {}, exam = null }) {
   const projects = [...new Set([...taskProjects(db), ...knownProjects(db)])];
   const today = todayLocal();
   const title = task ? 'Tarefa' : 'Nova tarefa';
+  const ck = task ? checklistParts(db, task) : null;
   const linked = exam || (task?.exam_id ? { id: task.exam_id, type_name: task.exam_type_name, starts_at: task.exam_starts_at } : null);
   return {
     title,
@@ -97,9 +98,10 @@ function form(req, db, { task = null, values = {}, errors = {}, exam = null }) {
           <span>Ligada ao exame <a href="/exames/${linked.id}">${linked.type_name || `n.º ${linked.id}`}${linked.starts_at ? ` · ${fmtDate(linked.starts_at)} ${linked.starts_at.slice(11)}` : ''}</a></span>
           <label class="check"><input type="checkbox" name="unlink" value="1"> <span>Desligar do exame</span></label></div>` : ''}
         <label class="span2">Notas <span class="opt">opcional</span><textarea name="notes" rows="4" maxlength="4000">${v.notes || ''}</textarea>${err('notes')}</label>
+        ${ck ? ck.body : html`<p class="span2 fhint">A checklist acrescenta-se depois de criar a tarefa.</p>`}
         <div class="span2 form-actions"><button class="btn primary" type="submit">${task ? 'Guardar' : 'Criar tarefa'}</button><a class="btn ghost" href="${linked && !task ? `/exames/${linked.id}` : '/tarefas'}">Cancelar</a></div>
       </form>
-      ${task ? checklist(db, task) : ''}
+      ${ck ? ck.forms : ''}
       ${task ? html`<div class="more-actions">
         ${task.done && !task.archived_at ? postButton(`/tarefas/${task.id}/arquivar`, 'Arquivar', { back: `/tarefas/${task.id}` }) : ''}
         ${postButton(`/tarefas/${task.id}/apagar`, 'Pôr na lixeira', { kind: 'danger' })}</div>` : ''}`,
@@ -366,6 +368,7 @@ export default async function taskRoutes(app, { db }) {
     const id = idParam(req);
     if (!id) return reply.callNotFound();
     const res = addItem(db, id, str(req.body?.text));
+    if (str(req.body?.ajax) === '1') return reply.code(res.ok ? 200 : 400).send({ ok: res.ok, id: res.id, reason: res.reason });
     return reply.redirect(res.ok ? itemBack(id) : `/tarefas/${id}?err=${res.reason || 'dados_invalidos'}#checklist`);
   });
   app.post('/tarefas/:id/itens/:item', async (req, reply) => {
@@ -382,29 +385,46 @@ export default async function taskRoutes(app, { db }) {
     const id = idParam(req);
     const item = Number.parseInt(req.params.item, 10);
     if (!id || !item) return reply.callNotFound();
-    deleteItem(db, id, item);
+    const res = deleteItem(db, id, item);
+    if (str(req.body?.ajax) === '1') return reply.code(res.ok ? 200 : 400).send({ ok: res.ok });
     return reply.redirect(itemBack(id));
   });
 }
 
-/** Checklist da tarefa: marcar, acrescentar, apagar. Com JS, marcar não recarrega a página. */
-function checklist(db, task) {
+/**
+ * Checklist da tarefa, mostrada dentro do cartão (do formulário da tarefa). Os botões e o campo
+ * pertencem a formulários próprios, fora do cartão (atributo form=), porque não pode haver
+ * formulários dentro de formulários. Com JS, marcar, acrescentar e apagar não recarregam a página
+ * (para não se perder o que ainda não foi guardado na tarefa).
+ */
+export function checklistParts(db, task) {
   const items = listItems(db, task.id);
   const done = items.filter((i) => i.done).length;
-  return html`<section class="sec tk-checklist" id="checklist" aria-labelledby="h-check">
-    <div class="sec-h"><h2 id="h-check">Checklist</h2>${items.length ? html`<span class="count" data-check-count>${done}/${items.length}</span>` : ''}</div>
-    ${items.length ? html`<div class="tk-progress" aria-hidden="true"><span data-check-bar class="w${Math.round((done / items.length) * 20) * 5}"></span></div>` : ''}
-    <ul class="tk-items" data-checklist="${task.id}">${items.map((i) => html`<li class="tk-item${i.done ? ' done' : ''}">
-      <form method="post" action="/tarefas/${task.id}/itens/${i.id}" class="tk-item-check">
-        <input type="hidden" name="done" value="${i.done ? '0' : '1'}">
-        <button type="submit" class="tk-box" role="checkbox" aria-checked="${i.done ? 'true' : 'false'}" aria-label="${i.text}" data-item="${i.id}">${i.done ? icon('certo', 'ico xs') : ''}</button>
-      </form>
+  const base = `/tarefas/${task.id}/itens`;
+  const body = html`<div class="span2 tk-checklist" id="checklist" data-checklist="${task.id}">
+    <div class="tk-check-h"><span class="tk-check-l" id="h-check">Checklist</span><span class="count" data-check-count>${done}/${items.length}</span></div>
+    <div class="tk-progress" aria-hidden="true"${items.length ? '' : raw(' hidden')}><span data-check-bar class="w${items.length ? Math.round((done / items.length) * 20) * 5 : 0}"></span></div>
+    <ul class="tk-items" aria-labelledby="h-check">${items.map((i) => itemRow(task.id, i))}</ul>
+    <div class="tk-item-add">
+      <label class="sr" for="tk-item-new">Novo item da checklist</label><input id="tk-item-new" name="text" form="ck-add" maxlength="200" required placeholder="+ Acrescentar item" autocomplete="off">
+      <button class="btn mini" type="submit" form="ck-add">Acrescentar</button>
+    </div>
+  </div>`;
+  const forms = html`<form method="post" action="${base}" id="ck-add" class="tk-item-addf" data-item-add></form>
+    ${items.map((i) => itemForms(task.id, i))}
+    <template id="ck-tpl">${itemRow(task.id, { id: 0, text: '', done: 0 })}${itemForms(task.id, { id: 0, done: 0 })}</template>`;
+  return { body, forms };
+}
+
+function itemRow(taskId, i) {
+  return html`<li class="tk-item${i.done ? ' done' : ''}" data-item="${i.id}">
+      <button type="submit" form="ck-t-${i.id}" class="tk-box" role="checkbox" aria-checked="${i.done ? 'true' : 'false'}" aria-label="${i.text}">${i.done ? icon('certo', 'ico xs') : ''}</button>
       <span class="tk-item-t">${i.text}</span>
-      <form method="post" action="/tarefas/${task.id}/itens/${i.id}/apagar" class="inline"><button type="submit" class="btn link tk-item-del" aria-label="Apagar item: ${i.text}" title="Apagar item">×</button></form>
-    </li>`)}</ul>
-    <form method="post" action="/tarefas/${task.id}/itens" class="tk-item-add">
-      <label class="sr" for="tk-item-new">Novo item</label><input id="tk-item-new" name="text" maxlength="200" required placeholder="+ Acrescentar item">
-      <button class="btn mini" type="submit">Acrescentar</button>
-    </form>
-  </section>`;
+      <button type="submit" form="ck-d-${i.id}" class="btn link tk-item-del" aria-label="Apagar item: ${i.text}" title="Apagar item">×</button>
+    </li>`;
+}
+
+function itemForms(taskId, i) {
+  return html`<form method="post" action="/tarefas/${taskId}/itens/${i.id}" id="ck-t-${i.id}" class="tk-item-check" data-item-toggle="${i.id}"><input type="hidden" name="done" value="${i.done ? '0' : '1'}"></form>
+    <form method="post" action="/tarefas/${taskId}/itens/${i.id}/apagar" id="ck-d-${i.id}" data-item-del="${i.id}"></form>`;
 }

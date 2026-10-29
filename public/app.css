@@ -1185,7 +1185,11 @@ td.acts-col .btn + .btn { margin-left: 0.25rem; }
 /* ---------- Tarefas: checklist, arquivo, lixeira ---------- */
 .tk-check { display: inline-flex; align-items: center; gap: 0.2rem; font-family: var(--f-mono); }
 .tk-check.all { color: var(--ok); font-weight: 700; }
-.tk-checklist { margin-top: 1.5rem; }
+.tk-checklist { border: 1px solid var(--rule); border-radius: var(--r); padding: 0.75rem 0.9rem 0.85rem; background: var(--paper); }
+.tk-check-h { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; }
+.tk-check-l { font-weight: 700; font-size: 0.92rem; }
+.tk-checklist .tk-items:empty { display: none; }
+.tk-checklist .tk-item:last-child { border-bottom: 0; }
 .tk-progress { height: 6px; background: var(--sunk); border-radius: 999px; overflow: hidden; margin: 0.25rem 0 0.75rem; }
 .tk-progress span { display: block; height: 100%; background: var(--ok); transition: width 150ms ease; }
 .tk-progress span.w0 { width: 0%; }
@@ -1227,3 +1231,7 @@ td.acts-col .btn + .btn { margin-left: 0.25rem; }
 .tk-arch-note { margin: 0.5rem 0.2rem 0; }
 @media (pointer: coarse) { .tk-box { width: 1.9rem; height: 1.9rem; } }
 .btn.link.tk-item-del { text-decoration: none; }
+.tk-remind .toolbar { flex-wrap: nowrap; }
+.tk-remind .toolbar label { flex: none; }
+.tk-remind .toolbar .date-in { width: 8.5rem; }
+.tk-remind .toolbar .time-in { width: 5.5rem; }

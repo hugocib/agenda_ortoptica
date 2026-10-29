@@ -594,6 +594,116 @@
     });
   });
 
+  // Checklist das tarefas (dentro do cartão da tarefa): marcar, acrescentar e apagar sem
+  // recarregar, para não se perder o que ainda não foi guardado na tarefa.
+  var ck = document.querySelector('[data-checklist]');
+  if (ck) {
+    var ckList = ck.querySelector('.tk-items');
+    var ckUpdate = function () {
+      var all = ckList.querySelectorAll('.tk-item').length;
+      var done = ckList.querySelectorAll('.tk-item.done').length;
+      ck.querySelector('[data-check-count]').textContent = done + '/' + all;
+      var prog = ck.querySelector('.tk-progress');
+      prog.hidden = !all;
+      prog.querySelector('[data-check-bar]').className = 'w' + (all ? Math.round(done / all * 20) * 5 : 0);
+    };
+    var ckPost = function (url, data) {
+      data.ajax = '1';
+      return fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(data) })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok || !j.ok) throw j; return j; }); });
+    };
+    var tickSvg = function () {
+      var u = document.querySelector('use');
+      var base = u ? u.getAttribute('href').split('#')[0] : '/static/icons.svg';
+      return '<svg class="ico xs" aria-hidden="true" focusable="false"><use href="' + base + '#i-certo"></use></svg>';
+    };
+    document.addEventListener('submit', function (ev) {
+      var form = ev.target;
+      var t = form.getAttribute('data-item-toggle');
+      var d = form.getAttribute('data-item-del');
+      var add = form.hasAttribute('data-item-add');
+      if (t === null && d === null && !add) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (t !== null) {
+        var li = ckList.querySelector('[data-item="' + t + '"]');
+        var input = form.querySelector('[name=done]');
+        var on = input.value === '1';
+        li.classList.toggle('done', on);
+        var box = li.querySelector('.tk-box');
+        box.setAttribute('aria-checked', on ? 'true' : 'false');
+        box.innerHTML = on ? tickSvg() : '';
+        input.value = on ? '0' : '1';
+        ckUpdate();
+        ckPost(form.action, { done: on ? '1' : '0' }).catch(function () { window.location.reload(); });
+      } else if (d !== null) {
+        var row = ckList.querySelector('[data-item="' + d + '"]');
+        ckPost(form.action, {}).then(function () {
+          if (row) row.remove();
+          document.querySelectorAll('#ck-t-' + d + ', #ck-d-' + d).forEach(function (f) { f.remove(); });
+          ckUpdate();
+        }).catch(function () { window.location.reload(); });
+      } else {
+        var field = document.getElementById('tk-item-new');
+        var text = field.value.trim();
+        if (!text) { field.focus(); return; }
+        ckPost(form.action, { text: text }).then(function (j) {
+          var tpl = document.getElementById('ck-tpl').innerHTML
+            .replace(/ck-t-0/g, 'ck-t-' + j.id).replace(/ck-d-0/g, 'ck-d-' + j.id)
+            .replace(/\/itens\/0/g, '/itens/' + j.id).replace(/data-item="0"/g, 'data-item="' + j.id + '"')
+            .replace(/data-item-toggle="0"/g, 'data-item-toggle="' + j.id + '"').replace(/data-item-del="0"/g, 'data-item-del="' + j.id + '"');
+          var box = document.createElement('div');
+          box.innerHTML = tpl;
+          var li = box.querySelector('li');
+          li.querySelector('.tk-item-t').textContent = text;
+          li.querySelector('.tk-box').setAttribute('aria-label', text);
+          li.querySelector('.tk-item-del').setAttribute('aria-label', 'Apagar item: ' + text);
+          ckList.appendChild(li);
+          box.querySelectorAll('form').forEach(function (f) { form.parentNode.insertBefore(f, form.nextSibling); });
+          field.value = '';
+          field.focus();
+          ckUpdate();
+        }).catch(function (e) {
+          field.setAttribute('aria-invalid', 'true');
+          field.title = e && e.reason === 'itens_limite' ? 'Uma checklist pode ter até 50 itens.' : 'Não foi possível acrescentar.';
+        });
+      }
+    }, true);
+  }
+
+  // Hora escrita (24 h): ao sair do campo, «1730», «17h30» ou «9» ficam «17:30», «09:00».
+  var normTime = function (v) {
+    v = String(v || '').trim().toLowerCase().replace(/\s+/g, '');
+    if (!v) return '';
+    var h, m, mm = /^(\d{1,2})[:h.](\d{1,2})?$/.exec(v);
+    if (mm) { h = +mm[1]; m = +(mm[2] || 0); } else if (/^\d{1,4}$/.test(v)) {
+      if (v.length <= 2) { h = +v; m = 0; } else { h = +v.slice(0, v.length - 2); m = +v.slice(-2); }
+    } else return null;
+    if (!(h >= 0 && h <= 23 && m >= 0 && m <= 59)) return null;
+    return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+  };
+  document.addEventListener('focusout', function (ev) {
+    var inp = ev.target;
+    if (!inp.matches || !inp.matches('input[data-time]')) return;
+    var t = normTime(inp.value);
+    if (t === null) { inp.setAttribute('aria-invalid', 'true'); inp.title = 'Hora inválida: escreva por exemplo 17:30 ou 1730.'; } else {
+      inp.value = t; inp.removeAttribute('aria-invalid'); inp.title = '';
+    }
+  });
+
+  // Colunas das tarefas: as setas mudam a ordem das linhas (guarda-se ao carregar em «Guardar»).
+  document.querySelectorAll('[data-cols]').forEach(function (form) {
+    form.addEventListener('click', function (ev) {
+      var up = ev.target.closest('[data-col-up]');
+      var down = ev.target.closest('[data-col-down]');
+      if (!up && !down) return;
+      var row = ev.target.closest('[data-col-row]');
+      if (up && row.previousElementSibling) row.parentNode.insertBefore(row, row.previousElementSibling);
+      if (down && row.nextElementSibling) row.parentNode.insertBefore(row.nextElementSibling, row);
+      (up || down).focus();
+    });
+  });
+
   // Checklist das tarefas: marcar/desmarcar sem recarregar a página.
   document.querySelectorAll('[data-checklist]').forEach(function (list) {
     var sec = list.closest('.tk-checklist');
