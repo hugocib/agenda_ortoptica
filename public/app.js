@@ -701,10 +701,13 @@
     if (!view || !btn) return;
     if (!field.querySelector('[aria-invalid]') && !field.querySelector('.field-err')) field.hidden = true;
     btn.hidden = false;
+    var head = box.querySelector('.tk-notes-h');
     btn.addEventListener('click', function () {
       field.hidden = false;
       view.hidden = true;
       btn.hidden = true;
+      // O campo tem o seu próprio título «Notas»: o da vista formatada sai, para não repetir.
+      if (head) head.hidden = true;
       var ta = field.querySelector('textarea');
       ta.focus();
       ta.setSelectionRange(ta.value.length, ta.value.length);
