@@ -54,9 +54,9 @@ try {
     // lista de quem reserva, temas, cabeçalho dos relatórios e notificações.
     const tables = [
       ['report_history', 'versões de relatórios'], ['reports', 'relatórios'], ['exams', 'exames e reservas'],
-      ['requests', 'pedidos'], ['blocks', 'bloqueios'],
+      ['requests', 'pedidos'], ['blocks', 'bloqueios'], ['tasks', 'tarefas'],
     ];
-    const logWhere = "entity IN ('exame', 'pedido', 'bloqueio', 'relatorio')";
+    const logWhere = "entity IN ('exame', 'pedido', 'bloqueio', 'relatorio', 'tarefa')";
     const counts = tables.map(([t, label]) => [t, label, db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get().n]);
     const logN = db.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE ${logWhere}`).get().n;
     for (const [, label, n] of counts) console.log(`${String(n).padStart(6)}  ${label}`);

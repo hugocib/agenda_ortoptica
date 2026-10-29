@@ -472,4 +472,91 @@
     });
     flow.addEventListener('dragend', clear);
   }
+
+  // Tarefas: atalhos do lembrete («Hoje 17:00», «Amanhã 09:00», «No prazo», «Sem lembrete»).
+  document.querySelectorAll('[data-remind-presets]').forEach(function (box) {
+    var form = box.closest('form');
+    var dIn = form.querySelector('[name=remind_date]');
+    var tIn = form.querySelector('[name=remind_time]');
+    var toDmy = function (iso) { return iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4); };
+    box.addEventListener('click', function (ev) {
+      var b = ev.target.closest('[data-remind]');
+      if (!b) return;
+      var v = b.getAttribute('data-remind');
+      if (v === 'due') {
+        var due = form.querySelector('[name=due_date]').value.trim();
+        if (!/^\d{2}\/\d{2}\/\d{4}$/.test(due)) { form.querySelector('[name=due_date]').focus(); return; }
+        dIn.value = due; tIn.value = '09:00';
+      } else if (v) { dIn.value = toDmy(v.slice(0, 10)); tIn.value = v.slice(11); } else { dIn.value = ''; tIn.value = ''; }
+    });
+  });
+
+  // Tarefas: arrastar entre colunas e dentro da coluna. Guarda logo (sem recarregar a página);
+  // se o servidor não responder, recarrega para mostrar o estado verdadeiro.
+  var tboard = document.querySelector('[data-tasks]');
+  if (tboard && window.matchMedia('(pointer: fine)').matches) {
+    var tdrag = null;
+    var placeholder = document.createElement('li');
+    placeholder.className = 'tk-ph';
+    var after = function (list, y) {
+      var items = Array.prototype.filter.call(list.querySelectorAll('[data-task]'), function (el) { return el !== tdrag; });
+      for (var k = 0; k < items.length; k++) {
+        var r = items[k].getBoundingClientRect();
+        if (y < r.top + r.height / 2) return items[k];
+      }
+      return null;
+    };
+    tboard.addEventListener('dragstart', function (ev) {
+      var c = ev.target.closest && ev.target.closest('[data-task]');
+      if (!c) return;
+      tdrag = c;
+      ev.dataTransfer.effectAllowed = 'move';
+      try { ev.dataTransfer.setData('text/plain', ''); } catch (e) { /* Firefox */ }
+      placeholder.style.height = c.offsetHeight + 'px';
+      setTimeout(function () { c.classList.add('dragging'); }, 0);
+      tboard.classList.add('is-dragging');
+    });
+    tboard.addEventListener('dragover', function (ev) {
+      if (!tdrag) return;
+      var col = ev.target.closest && ev.target.closest('.tk-col');
+      if (!col) return;
+      ev.preventDefault();
+      var list = col.querySelector('[data-drop]');
+      var ref = after(list, ev.clientY);
+      if (ref) list.insertBefore(placeholder, ref); else list.appendChild(placeholder);
+    });
+    var tend = function () {
+      if (placeholder.parentNode) placeholder.parentNode.removeChild(placeholder);
+      if (tdrag) tdrag.classList.remove('dragging');
+      tboard.classList.remove('is-dragging');
+      tdrag = null;
+    };
+    tboard.addEventListener('drop', function (ev) {
+      if (!tdrag || !placeholder.parentNode) return;
+      ev.preventDefault();
+      var list = placeholder.parentNode;
+      list.insertBefore(tdrag, placeholder);
+      var moved = tdrag;
+      tend();
+      var col = list.getAttribute('data-drop');
+      var ids = Array.prototype.map.call(list.querySelectorAll('[data-task]'), function (el) { return el.getAttribute('data-task'); });
+      moved.classList.toggle('done', col === 'feito');
+      var none = list.parentNode.querySelector('.tk-none');
+      if (none) none.hidden = true;
+      var body = new URLSearchParams({ col: col, ids: ids.join(','), ajax: '1' });
+      fetch('/tarefas/' + moved.getAttribute('data-task') + '/mover', { method: 'POST', body: body, credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' } })
+        .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+        .then(function () {
+          // Contadores das colunas
+          tboard.querySelectorAll('.tk-col').forEach(function (c) {
+            var n = c.querySelectorAll('[data-task]').length;
+            var cnt = c.querySelector('.tk-col-h .count');
+            if (cnt && c.getAttribute('data-col') !== 'feito') cnt.textContent = n;
+          });
+          if (col === 'feito') { var acts = moved.querySelector('.tk-acts'); if (acts) acts.remove(); }
+        })
+        .catch(function () { window.location.reload(); });
+    });
+    tboard.addEventListener('dragend', tend);
+  }
 })();

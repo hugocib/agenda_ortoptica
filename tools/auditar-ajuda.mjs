@@ -2,7 +2,7 @@
 // Uso: arrancar a app com dados de demonstração na porta 3123 e correr  node tools/auditar-ajuda.mjs
 import { chromium } from 'playwright';
 const S = '/tmp/claude-0/-home-claude/1a76be65-e1c4-5674-bced-9bcc869c56b9/scratchpad';
-const paths = ['/fluxo', '/hoje', '/agenda', '/pedidos/novo', '/investigacao/nova', '/admin', '/admin/exames', '/admin/reservas', '/admin/sistema', '/bloqueios', '/aparencia', '/conta', '/estatistica', '/admin/exames/1/ficha', '/exames/1/agendar'];
+const paths = ['/tarefas', '/tarefas/2', '/fluxo', '/hoje', '/agenda', '/pedidos/novo', '/investigacao/nova', '/admin', '/admin/exames', '/admin/reservas', '/admin/sistema', '/bloqueios', '/aparencia', '/conta', '/estatistica', '/admin/exames/1/ficha', '/exames/1/agendar'];
 const b = await chromium.launch();
 let bad = 0, total = 0;
 for (const [w, mobile] of [[1280, false], [1920, false], [390, true]]) {

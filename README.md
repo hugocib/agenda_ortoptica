@@ -88,6 +88,8 @@ Investigação:         Avaliação (ortoptista, qualquer hora) ─► Realizada
 
 - **Fluxo** (menu): quadro com todos os exames em curso, uma faixa por circuito (secretariado, fora do circuito, investigação) e uma coluna por passo do percurso: por confirmar/agendar, por marcar no Siima, agendado, por realizar, relatório, executar no Siima e concluído (últimos 7 dias). As colunas vêm do estado do exame, por isso o quadro nunca se desalinha da realidade. Arrastar um cartão para a coluna seguinte faz esse passo (com confirmação e «Desfazer»); os botões no cartão fazem o mesmo, também no telemóvel. Passos que precisam de mais dados (hora, n.º de requisição, relatório) abrem a página respetiva. Os cartões parados há demasiado tempo ficam a vermelho. A «Hoje» continua a ser o dia; o «Fluxo» mostra onde o trabalho encalha.
 
+- **Tarefas** (menu; experiência que se desliga em *Administração → Sistema → Quadro de tarefas*, sem perder as tarefas): quadro livre com A fazer / Em curso / À espera de alguém / Feito. Arraste para mudar de coluna ou de ordem; no telemóvel, «Feito» no cartão e a coluna na página da tarefa. Cada tarefa pode ter projeto (filtro no topo), prazo, notas, **lembrete** (notificação push no dia e hora escolhidos, uma vez; mudar a hora volta a ativá-lo) e uma ligação a um exame ou avaliação (aparece na página do exame; nunca o altera). As que têm prazo até hoje ou lembrete já passado aparecem em «Hoje» e no contador do menu. O título aparece nas notificações: não ponha dados de doentes; para um exame, use a ligação.
+
 Cada passo tem um botão. O que falta fazer aparece em «Hoje», com contador no menu.
 
 ## 5. Cópias de segurança e restauro
@@ -121,7 +123,7 @@ Se alguma coisa falhar a meio, o script para e a versão anterior continua a cor
 | `docker compose exec app node src/cli.js utilizadores` | listar utilizadores |
 | `docker compose exec app node src/cli.js nova-password <utilizador>` | repor palavra-passe (também reativa a conta) |
 | `docker compose exec app node src/cli.js backup` | cópia de segurança imediata |
-| `docker compose exec app node src/cli.js limpar-atividade` | mostra quantos pedidos, exames, reservas, relatórios e bloqueios existem; com `--confirmar` apaga-os (depois de uma cópia de segurança) e mantém utilizadores, horário, atos/fichas, link de reservas, temas e notificações — útil depois de testes |
+| `docker compose exec app node src/cli.js limpar-atividade` | mostra quantos pedidos, exames, reservas, relatórios, bloqueios e tarefas existem; com `--confirmar` apaga-os (depois de uma cópia de segurança) e mantém utilizadores, horário, atos/fichas, link de reservas, temas e notificações — útil depois de testes |
 
 Desenvolvimento sem Docker: `npm install`, `npm test`, `npm run dev` (abre em `http://localhost:3000`).
 

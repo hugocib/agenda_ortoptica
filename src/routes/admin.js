@@ -186,6 +186,12 @@ export default async function adminRoutes(app, { db, config }) {
             ${logo ? html`<form method="post" action="/admin/relatorio/logo/remover" class="inline"><button class="btn ghost" data-confirm="Remover o logotipo dos relatórios? Os já validados não mudam.">Remover</button></form>` : ''}
           </div>
         </section>
+        <section class="sec" id="tarefas"><div class="sec-h"><h2>Quadro de tarefas</h2>${help('Experiência. Desligado, o menu «Tarefas» desaparece e não são enviados lembretes; as tarefas ficam guardadas e voltam se o ligar outra vez.')}</div>
+          <form method="post" action="/admin/tarefas" class="toolbar">
+            <p class="tk-state">${getSetting(db, 'tasks_enabled') !== false ? 'Ligado' : 'Desligado'}</p>
+            <button class="btn" name="on" value="${getSetting(db, 'tasks_enabled') !== false ? '0' : '1'}">${getSetting(db, 'tasks_enabled') !== false ? 'Desligar' : 'Ligar'}</button>
+          </form>
+        </section>
         <section class="sec"><div class="sec-h"><h2>Calendário (ICS)</h2>${help('Subscreva no Outlook ou no telemóvel para ver os exames marcados. Só mostra o tipo de exame e a hora, sem dados de doentes.')}</div>
           <p class="link-row"><button type="button" class="copy" data-copy="${icsUrl}" aria-label="Copiar endereço do calendário">${icsUrl}${icon('copiar', 'ico xs')}</button>
             <form method="post" action="/admin/ics" class="inline"><button class="btn" data-confirm="Criar novo endereço? O atual deixa de funcionar.">Gerar novo endereço</button></form></p>
@@ -228,6 +234,13 @@ export default async function adminRoutes(app, { db, config }) {
     setSetting(db, 'report_logo', '');
     audit(db, req.user.id, 'logotipo_removido', 'definicoes');
     return reply.redirect('/admin/sistema?msg=logo_removido#logotipo');
+  });
+
+  app.post('/admin/tarefas', async (req, reply) => {
+    const on = str(req.body?.on) === '1';
+    setSetting(db, 'tasks_enabled', on);
+    audit(db, req.user.id, on ? 'tarefas_ligadas' : 'tarefas_desligadas', 'definicoes');
+    return reply.redirect(`/admin/sistema?msg=${on ? 'tarefas_on' : 'tarefas_off'}#tarefas`);
   });
 
   app.post('/admin/reservas', async (req, reply) => {

@@ -92,6 +92,8 @@ export const DEFAULT_SETTINGS = {
   booking_names: [],
   // Logotipo dos relatórios (data URL; vazio = sem logotipo).
   report_logo: '',
+  // Quadro de tarefas (experiência): desligado esconde o menu e não envia lembretes; os dados ficam.
+  tasks_enabled: true,
 };
 
 export function seed(db) {

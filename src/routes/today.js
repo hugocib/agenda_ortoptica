@@ -6,6 +6,8 @@ import { dayTape, fmtDuration } from '../domain/tape.js';
 import { addDays, fmtDate, fmtDateLong, nowLocal, todayLocal, weekday } from '../time.js';
 import { ageDays, cap, copyable, dayTapeByPeriod, emptyState, examLine, flash, help, originTag, pageHead, patientLabel, postButton } from '../ui.js';
 import { send } from './util.js';
+import { dueTasks, tasksEnabled } from '../tasks.js';
+import { taskCard } from './tasks.js';
 
 const BACK = '/hoje';
 const IN_SHOWN = `(${SHOWN_STATUSES.map((s) => `'${s}'`).join(',')})`;
@@ -108,6 +110,7 @@ function orthoPage(req, db) {
   const proximos = examsWhere(db, "e.status IN ('agendado','pendente') AND e.starts_at >= ? AND e.starts_at < ?", [`${addDays(today, 1)}T00:00`, `${addDays(today, 8)}T00:00`]);
   const oldest = c.porRegistarAntigo ? ageDays(c.porRegistarAntigo.slice(0, 10), today) : 0;
   const { t, windows } = dayData(db, today, { exams: todays, nowTime: nowLocal().slice(11) });
+  const tasks = tasksEnabled(db) ? dueTasks(db, today) : [];
 
   return {
     title: 'Hoje',
@@ -135,6 +138,10 @@ function orthoPage(req, db) {
           </section>
         </div>
         <aside class="side" aria-label="Pendentes">
+          ${tasks.length ? html`<section class="sec" id="tarefas" aria-labelledby="h-tarefas">
+            <div class="sec-h"><h2 id="h-tarefas">Tarefas para hoje</h2><span class="count owed">${tasks.length}</span><span class="aside"><a href="/tarefas">Quadro</a></span></div>
+            <ul class="tk-cards tk-today">${tasks.map((x) => taskCard(x, { today, back: `${BACK}#tarefas`, draggable: false }))}</ul>
+          </section>` : ''}
           ${porFechar.length ? html`<section class="sec" id="fechar" aria-labelledby="h-fechar">
             <div class="sec-h"><h2 id="h-fechar">Por fechar</h2><span class="count">${porFechar.length}</span>${help('Já passaram e não foram marcados como realizados nem falta.')}</div>
             <ul class="list">${porFechar.map((e) => html`<li>${examLine(e, { today, when: true, trackOn: false, actions: orthoActions(e) })}</li>`)}</ul>

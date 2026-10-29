@@ -12,6 +12,12 @@
   <symbol id="i-fluxo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
     <path d="M4 4.5h4.5v15H4zM10 4.5h4.5v9H10zM16 4.5h4v12h-4z"/>
   </symbol>
+  <symbol id="i-tarefas" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9 6h11M9 12h11M9 18h11"/><path d="M3.5 6l1.2 1.2L7 4.8M3.5 12l1.2 1.2L7 10.8"/><path d="M4 17.2h2.4v2.4H4z"/>
+  </symbol>
+  <symbol id="i-sino" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.5h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>
+  </symbol>
   <symbol id="i-estatistica" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
     <path d="M4 20h16"/><path d="M7 16.5V11M12 16.5V6M17 16.5v-3.5"/>
   </symbol>

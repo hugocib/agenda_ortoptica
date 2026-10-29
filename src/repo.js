@@ -367,6 +367,8 @@ export function counts(db, today) {
     relatoriosPendentes: one(`SELECT COUNT(*) FROM exams e LEFT JOIN reports r ON r.exam_id = e.id
       WHERE e.status = 'realizado' AND (r.id IS NULL OR r.status = 'rascunho')`),
     porFechar: one("SELECT COUNT(*) FROM exams WHERE status = 'agendado' AND starts_at < ?", `${today}T00:00`),
+    tarefasOn: getSetting(db, 'tasks_enabled') !== false,
+    tarefas: one("SELECT COUNT(*) FROM tasks WHERE col <> 'feito' AND ((due_date IS NOT NULL AND due_date <= ?) OR (remind_at IS NOT NULL AND remind_at <= ?))", today, nowLocal()),
     hoje: one("SELECT COUNT(*) FROM exams WHERE status IN ('pendente','agendado','realizado','faltou') AND starts_at >= ? AND starts_at < ?", `${today}T00:00`, `${addDays(today, 1)}T00:00`),
   };
 }

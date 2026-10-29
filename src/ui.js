@@ -62,6 +62,12 @@ export const MESSAGES = {
   backup: 'Cópia de segurança criada.',
   tema: 'Tema aplicado a toda a app.',
   ics: 'Novo endereço do calendário criado. O anterior deixou de funcionar.',
+  tarefa: 'Tarefa criada.',
+  tarefa_guardada: 'Tarefa guardada.',
+  tarefa_apagada: 'Tarefa apagada.',
+  tarefa_feita: 'Tarefa marcada como feita.',
+  tarefas_on: 'Quadro de tarefas ligado.',
+  tarefas_off: 'Quadro de tarefas desligado. As tarefas ficam guardadas e voltam se o ligar outra vez.',
   avaliacao: 'Avaliação de investigação registada.',
   avaliacao_alterada: 'Avaliação alterada.',
   info_clinica: 'Informação clínica guardada.',
@@ -127,14 +133,17 @@ function count(n, kind = '') {
 
 function nav(user, counts, active) {
   if (!user) return '';
+  // No telemóvel o menu vai para baixo: rótulos curtos onde o nome não cabe.
+  const SHORT = { estatistica: 'Números' };
   const item = (href, label, key, ico, extra = '', cls = '') =>
-    html`<a href="${href}" class="nav-i${cls}${active === key ? ' active' : ''}"${active === key ? raw(' aria-current="page"') : ''}>${icon(ico)}<span class="nav-l">${label}</span>${extra}</a>`;
+    html`<a href="${href}" class="nav-i${cls}${active === key ? ' active' : ''}"${active === key ? raw(' aria-current="page"') : ''}>${icon(ico)}<span class="nav-l">${SHORT[key] ? html`<span class="nav-full">${label}</span><span class="nav-short" aria-hidden="true">${SHORT[key]}</span>` : label}</span>${extra}</a>`;
   const todayCount = (counts.porConfirmar || 0) + (counts.porRegistarSiima || 0) + (counts.relatoriosPendentes || 0) + (counts.porFechar || 0) + (counts.porMarcarSiima || 0);
   return html`<nav class="nav" aria-label="Principal">
     ${item('/hoje', 'Hoje', 'hoje', 'hoje', count(todayCount, 'owed'))}
     ${item('/agenda', 'Agenda', 'agenda', 'agenda')}
     ${item('/fluxo', 'Fluxo', 'fluxo', 'fluxo')}
     ${item('/pedidos', 'Pedidos', 'pedidos', 'pedidos', count(counts.porAgendar))}
+    ${counts.tarefasOn ? item('/tarefas', 'Tarefas', 'tarefas', 'tarefas', count(counts.tarefas, 'owed')) : ''}
     ${item('/estatistica', 'Estatística', 'estatistica', 'estatistica')}
     ${item('/admin', 'Admin.', 'admin', 'admin')}
   </nav>`;

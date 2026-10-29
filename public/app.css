@@ -1052,3 +1052,52 @@ td.acts-col .btn + .btn { margin-left: 0.25rem; }
   .fl-lane-h { grid-column: 1 / -1; padding: 0 0 0.45rem; }
   .fl-card { padding: 0.45rem 0.5rem; }
 }
+
+/* ---------- Tarefas ---------- */
+.tk-board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; align-items: start; }
+.tk-col { background: var(--sunk); border-radius: var(--r); padding: 0.6rem 0.6rem 0.75rem; min-height: 8rem; }
+.tk-col-h { display: flex; align-items: center; gap: 0.45rem; margin: 0 0 0.55rem; font-family: var(--label-font); font-size: var(--label-size);
+  text-transform: var(--label-case); letter-spacing: var(--label-track); color: var(--ink-2); }
+.tk-cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.45rem; min-height: 2.5rem; }
+.tk-card { background: var(--sheet); border: 1px solid var(--rule-strong); border-radius: var(--r); padding: 0.55rem 0.65rem; display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.9rem; }
+.tk-card[draggable="true"] { cursor: grab; }
+.tk-card.dragging { opacity: 0.4; }
+.tk-card.done .tk-title { color: var(--ink-3); text-decoration: line-through; text-decoration-thickness: 1px; }
+.tk-ph { border: 2px dashed var(--accent); border-radius: var(--r); background: var(--accent-soft); }
+.tk-title { font-weight: 650; color: var(--ink); text-decoration: none; line-height: 1.3; overflow-wrap: anywhere; }
+.tk-title:hover { text-decoration: underline; }
+.tk-meta { display: flex; flex-wrap: wrap; gap: 0.2rem 0.55rem; align-items: center; font-size: 0.8rem; color: var(--ink-3); }
+.tk-proj { color: var(--accent); font-weight: 600; }
+.tk-due { font-weight: 600; }
+.tk-due.today { color: var(--owed-ink); }
+.tk-due.late { color: var(--late); }
+.tk-rem { display: inline-flex; align-items: center; gap: 0.2rem; font-family: var(--f-mono); }
+.tk-rem.past { opacity: 0.6; }
+.tk-exam { font-weight: 600; }
+.tk-notes { font-style: italic; }
+.tk-acts { display: flex; gap: 0.3rem; }
+.tk-acts .btn.mini { min-height: 1.9rem; font-size: 0.8rem; padding: 0 0.6rem; }
+.tk-none { margin: 0.25rem 0.2rem 0; color: var(--ink-3); }
+.tk-quick { display: flex; gap: 0.35rem; margin-bottom: 0.55rem; }
+.tk-quick input { min-height: 2.25rem; padding: 0.35rem 0.6rem; font-size: 0.9rem; }
+.tk-quick .btn.mini { min-height: 2.25rem; }
+.tk-filter { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0 0 1rem; }
+.tk-filter .chip { font-family: var(--f-body); font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; background: transparent; color: var(--ink-2); border-color: var(--rule-strong); }
+.tk-filter .chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.tk-remind { grid-column: auto; }
+.tk-remind .toolbar { margin: 0 0 0.4rem; }
+.tk-remind .chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.tk-link { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1.25rem; padding: 0.6rem 0.8rem; background: var(--sunk); border-radius: var(--r); }
+.tk-state { margin: 0; font-weight: 700; }
+.tk-today { margin-bottom: 0.25rem; }
+.fhint { display: block; font-weight: 500; font-size: 0.82rem; color: var(--ink-3); }
+@media (max-width: 1020px) { .tk-board { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .tk-board { grid-template-columns: 1fr; } .tk-col { min-height: 0; } .tk-card[draggable="true"] { cursor: auto; } }
+.nav-short { display: none; }
+@media (max-width: 760px) {
+  .nav-full { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .nav-short { display: inline; }
+}
+.tk-remind legend { border: 0; font-family: var(--f-body); text-transform: none; letter-spacing: 0; font-stretch: 100%; font-size: 0.92rem; font-weight: 700; padding: 0; margin-bottom: 0.35rem; }
+.tk-remind .fhint { margin: 0 0 0.5rem; }
+.tk-remind legend .opt { display: block; font-weight: 500; color: var(--ink-3); font-size: 0.84rem; margin-top: 0.2rem; }

@@ -24,6 +24,8 @@ import examRoutes from './routes/exams.js';
 import reportRoutes from './routes/reports.js';
 import researchRoutes from './routes/research.js';
 import flowRoutes from './routes/flow.js';
+import taskRoutes from './routes/tasks.js';
+import { sendDueReminders } from './tasks.js';
 import agendaRoutes from './routes/agenda.js';
 import statsRoutes from './routes/stats.js';
 import adminRoutes from './routes/admin.js';
@@ -127,7 +129,7 @@ export async function buildApp({ db, config = defaultConfig, logger = true } = {
     }));
   });
 
-  for (const r of [lookRoutes, bookingRoutes, pushRoutes, authRoutes, todayRoutes, requestRoutes, examRoutes, reportRoutes, researchRoutes, flowRoutes, agendaRoutes, statsRoutes, adminRoutes, miscRoutes]) {
+  for (const r of [lookRoutes, bookingRoutes, pushRoutes, authRoutes, todayRoutes, requestRoutes, examRoutes, reportRoutes, researchRoutes, flowRoutes, taskRoutes, agendaRoutes, statsRoutes, adminRoutes, miscRoutes]) {
     await app.register(r, deps);
   }
   return app;
@@ -151,6 +153,8 @@ async function main() {
   const app = await buildApp({ db });
   scheduleBackups(db, { dir: defaultConfig.backupDir, keep: defaultConfig.backupKeep, everyHours: defaultConfig.backupEveryHours, log: app.log });
   setInterval(() => purgeExpiredSessions(db, defaultConfig.sessionIdleHours), 3600 * 1000).unref();
+  // Lembretes das tarefas: verificados de minuto a minuto.
+  setInterval(() => { sendDueReminders(db, { log: app.log }).catch((err) => app.log.warn({ msg: err?.message }, 'lembretes')); }, 60 * 1000).unref();
 
   const shutdown = async (signal) => {
     app.log.info({ signal }, 'a terminar');

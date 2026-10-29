@@ -9,6 +9,8 @@ import { addDays, fmtDate, fmtDateLong, fmtUtcLocal, isLocalDateTime, nowLocal, 
 import { cap, copyable, dateInput, emptyState, flash, help, originTag, pageHead, patientLabel, postButton, when } from '../ui.js';
 import { idParam, safeBack, send, str, withMsg, withParam } from './util.js';
 import { inboxItem } from './today.js';
+import { tasksEnabled, tasksForExam } from '../tasks.js';
+import { taskCard } from './tasks.js';
 
 const ACTION_MSG = {
   desmarcar: 'desmarcado', cancelar: 'cancelado', realizado: 'realizado', faltou: 'faltou', anular_realizado: 'anulado', recusar: 'recusado',
@@ -131,6 +133,10 @@ export default async function examRoutes(app, { db }) {
               </form></details>
             ${clinicalBox}`}
           </section>
+          ${tasksEnabled(db) ? html`<section class="sec quiet" id="tarefas">
+            <div class="sec-h"><h2>Tarefas</h2><span class="aside"><a href="/tarefas/nova?exame=${id}">+ Tarefa sobre este ${research ? 'registo' : 'exame'}</a></span></div>
+            ${(() => { const ts = tasksForExam(db, id); return ts.length ? html`<ul class="tk-cards">${ts.map((x) => taskCard(x, { back: `${back}#tarefas`, draggable: false }))}</ul>` : html`<p class="muted small">Sem tarefas. Ex.: ${research ? '«enviar dados à equipa do projeto», «marcar 2.ª sessão»' : '«pedir requisição», «enviar relatório ao médico»'}.</p>`; })()}
+          </section>` : ''}
           <section class="sec quiet">
             <div class="sec-h"><h2>Histórico</h2></div>
             ${log.length ? html`<ul class="log">${log.map((l) => {
