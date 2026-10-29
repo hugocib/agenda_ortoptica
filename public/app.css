@@ -725,6 +725,7 @@ input.small-num { max-width: 4.5rem; }
 .help {
   --hs: clamp(1.15rem, 1.2em, 1.55rem);
   position: relative; display: inline-block; width: var(--hs); height: var(--hs); margin-left: 0.3em;
+  flex: none; /* numa linha flexível estreita não pode encolher (ficava oval) */
   vertical-align: calc(0.37em - var(--hs) / 2); font-size: inherit; line-height: 1;
 }
 .help > summary {
@@ -1304,3 +1305,6 @@ td.acts-col .btn + .btn { margin-left: 0.25rem; }
 .md a { color: var(--accent); }
 .fl-lane-h { padding-top: 0.3rem; }
 .fl-lane-h h2 { padding-top: 0; }
+.fl-ch-name { display: inline; }
+.fl-ch-name .help { margin-left: 0.35em; }
+@media (min-width: 761px) { .fl-ch-t { min-height: 0; align-items: flex-start; } }

@@ -61,9 +61,7 @@ export default async function flowRoutes(app, { db }) {
       const st = colStats[c.key];
       const info = COLUMN_INFO[c.key];
       return html`<div class="fl-ch${st.stale ? ' has-stale' : ''}">
-        <span class="fl-ch-t">${c.label}${mobile ? '' : html` <span class="count">${st.n}</span>`}</span>
-        <span class="fl-ch-what">${info.what}</span>
-        ${info.who ? html`<span class="fl-ch-who">Vez de: <b>${info.who}</b></span>` : ''}
+        <span class="fl-ch-t"><span class="fl-ch-name">${c.label}${mobile ? '' : help(html`<p>${info.what}</p>${info.who ? html`<p>Vez de: <b>${info.who}</b>.</p>` : ''}`, `O que é «${c.label}»`)}</span>${mobile ? '' : html`<span class="count">${st.n}</span>`}</span>
         ${!mobile && st.stale ? html`<span class="fl-ch-late">${st.stale} ${st.stale === 1 ? 'parado' : 'parados'} · o mais antigo ${staleText(c.key, st.oldest)}</span>` : ''}
       </div>`;
     };
