@@ -9,7 +9,7 @@ import { addDays, fmtDate, fmtDateLong, fmtUtcLocal, isLocalDateTime, nowLocal, 
 import { cap, copyable, dateInput, emptyState, flash, help, originTag, pageHead, patientLabel, postButton, when } from '../ui.js';
 import { idParam, safeBack, send, str, withMsg, withParam } from './util.js';
 import { inboxItem } from './today.js';
-import { tasksEnabled, tasksForExam } from '../tasks.js';
+import { taskSettings, tasksEnabled, tasksForExam } from '../tasks.js';
 import { taskCard } from './tasks.js';
 
 const ACTION_MSG = {
@@ -124,7 +124,7 @@ export default async function examRoutes(app, { db }) {
                 <div class="grid3">
                   <label>N.º de processo<input name="patient_process" maxlength="40" value="${e.patient_process}" class="mono" inputmode="numeric" autocomplete="off"></label>
                   <label>Nome <span class="opt">opcional</span><input name="patient_name" maxlength="120" value="${e.patient_name}" autocomplete="off"></label>
-                  <label>Nascimento <span class="opt">opcional</span>${dateInput('birth_date', e.birth_date || '')}</label>
+                  <label>Nascimento <span class="opt">opcional</span>${dateInput('birth_date', e.birth_date || '', { past: true })}</label>
                 </div>
                 <div class="grid3">
                   <label>Origem<select name="origin">${Object.entries(ORIGIN_LABEL).map(([k, l]) => html`<option value="${k}"${e.origin === k ? raw(' selected') : ''}>${l}</option>`)}</select></label>
@@ -136,7 +136,7 @@ export default async function examRoutes(app, { db }) {
           </section>
           ${tasksEnabled(db) ? html`<section class="sec quiet" id="tarefas">
             <div class="sec-h"><h2>Tarefas</h2><span class="aside"><a href="/tarefas/nova?exame=${id}">+ Tarefa sobre este ${research ? 'registo' : 'exame'}</a></span></div>
-            ${(() => { const ts = tasksForExam(db, id); return ts.length ? html`<ul class="tk-cards">${ts.map((x) => taskCard(x, { back: `${back}#tarefas`, draggable: false }))}</ul>` : html`<p class="muted small">Sem tarefas. Ex.: ${research ? '«enviar dados à equipa do projeto», «marcar 2.ª sessão»' : '«pedir requisição», «enviar relatório ao médico»'}.</p>`; })()}
+            ${(() => { const ts = tasksForExam(db, id); return ts.length ? html`<ul class="tk-cards">${ts.map((x) => taskCard(x, { back: `${back}#tarefas`, draggable: false, progress: taskSettings(db).progress }))}</ul>` : html`<p class="muted small">Sem tarefas. Ex.: ${research ? '«enviar dados à equipa do projeto», «marcar 2.ª sessão»' : '«pedir requisição», «enviar relatório ao médico»'}.</p>`; })()}
           </section>` : ''}
           <section class="sec quiet">
             <div class="sec-h"><h2>Histórico</h2></div>

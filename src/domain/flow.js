@@ -14,11 +14,22 @@ export const COLUMNS = [
   { key: 'feito', label: 'Concluído' },
 ];
 
+// O que falta em cada coluna e de quem é a vez (aparece no cabeçalho da coluna).
+export const COLUMN_INFO = {
+  entrada: { what: 'Confirmar reservas e pedidos do secretariado; dar hora aos pedidos sem hora.', who: 'ortoptista' },
+  marcar: { what: 'Exames fora do circuito com hora: marcar no Siima e carregar em «Marcado no Siima».', who: 'ortoptista' },
+  agendado: { what: 'Marcados para um dia que ainda não chegou. Nada a fazer até lá.', who: 'doente' },
+  fechar: { what: 'O dia chegou: registar realizado ou falta.', who: 'ortoptista' },
+  relatorio: { what: 'Realizados: fazer e validar o relatório (ou a ficha).', who: 'ortoptista' },
+  siima: { what: 'Relatório validado: assinalar como executado no Siima.', who: 'ortoptista' },
+  feito: { what: 'Concluídos nos últimos 7 dias.', who: '' },
+};
+
 // Faixas (circuitos) e as colunas por onde cada uma passa.
 export const LANES = [
-  { key: 'secretariado', label: 'Secretariado', cols: ['entrada', 'agendado', 'fechar', 'relatorio', 'siima', 'feito'] },
-  { key: 'direto', label: 'Fora do circuito', cols: ['entrada', 'marcar', 'agendado', 'fechar', 'relatorio', 'siima', 'feito'] },
-  { key: 'investigacao', label: 'Investigação', cols: ['agendado', 'fechar', 'relatorio', 'feito'] },
+  { key: 'secretariado', label: 'Secretariado', note: 'Reservas pelo link; a marcação no Siima é do secretariado.', cols: ['entrada', 'agendado', 'fechar', 'relatorio', 'siima', 'feito'] },
+  { key: 'direto', label: 'Fora do circuito', note: 'Pedidos criados por si em «Novo pedido»; a marcação no Siima é sua.', cols: ['entrada', 'marcar', 'agendado', 'fechar', 'relatorio', 'siima', 'feito'] },
+  { key: 'investigacao', label: 'Investigação', note: 'Avaliações de participantes; não passam pelo Siima.', cols: ['agendado', 'fechar', 'relatorio', 'feito'] },
 ];
 
 // Dias a partir dos quais um cartão parado fica assinalado (por coluna).

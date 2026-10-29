@@ -196,6 +196,18 @@
   });
 
   // Datas dd/mm/aaaa: as barras aparecem sozinhas enquanto se escreve os números.
+  // Ao sair do campo, «29/10/26» fica «29/10/2026» (data de nascimento: 19aa se 20aa ficar no futuro).
+  var pad2 = function (n) { return (n < 10 ? '0' : '') + n; };
+  var todayIso = function () { var d = new Date(); return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); };
+  document.addEventListener('focusout', function (ev) {
+    var inp = ev.target;
+    if (!inp.matches || !inp.matches('input[data-date]')) return;
+    var m = /^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2})$/.exec(inp.value.trim());
+    if (!m) return;
+    var y = '20' + m[3];
+    if (inp.getAttribute('data-date') === 'past' && y + '-' + pad2(+m[2]) + '-' + pad2(+m[1]) > todayIso()) y = '19' + m[3];
+    inp.value = pad2(+m[1]) + '/' + pad2(+m[2]) + '/' + y;
+  });
   document.querySelectorAll('input[data-date]').forEach(function (inp) {
     inp.addEventListener('input', function (ev) {
       if (ev.inputType && ev.inputType.indexOf('delete') === 0) return;
@@ -416,63 +428,6 @@
     });
   }
 
-  // Quadro «Fluxo»: arrastar um cartão para a coluna seguinte carrega no botão desse passo
-  // (que pede confirmação). Só as colunas permitidas para esse cartão aceitam a largada.
-  var flow = document.querySelector('[data-flow]');
-  if (flow && window.matchMedia('(pointer: fine)').matches) {
-    var dragged = null;
-    var targets = function (cardEl) {
-      var lane = cardEl.getAttribute('data-lane');
-      return Array.prototype.map.call(cardEl.querySelectorAll('[data-move]'), function (m) {
-        return { col: m.getAttribute('data-move'), el: m, cell: flow.querySelector('.fl-cell[data-lane="' + lane + '"][data-col="' + m.getAttribute('data-move') + '"]') };
-      }).filter(function (t) { return t.cell; });
-    };
-    var clear = function () {
-      flow.classList.remove('is-dragging');
-      flow.querySelectorAll('.drop-ok, .drop-over').forEach(function (c) { c.classList.remove('drop-ok', 'drop-over'); });
-      if (dragged) dragged.el.classList.remove('dragging');
-      dragged = null;
-    };
-    flow.addEventListener('dragstart', function (ev) {
-      var cardEl = ev.target.closest && ev.target.closest('[data-card]');
-      if (!cardEl) return;
-      dragged = { el: cardEl, targets: targets(cardEl) };
-      ev.dataTransfer.effectAllowed = 'move';
-      try { ev.dataTransfer.setData('text/plain', ''); } catch (e) { /* Firefox precisa de dados */ }
-      cardEl.classList.add('dragging');
-      flow.classList.add('is-dragging');
-      dragged.targets.forEach(function (t) { t.cell.classList.add('drop-ok'); });
-    });
-    var targetFor = function (ev) {
-      var cell = ev.target.closest && ev.target.closest('.fl-cell');
-      if (!dragged || !cell) return null;
-      return dragged.targets.filter(function (t) { return t.cell === cell; })[0] || null;
-    };
-    flow.addEventListener('dragover', function (ev) {
-      var t = targetFor(ev);
-      flow.querySelectorAll('.drop-over').forEach(function (c) { if (!t || c !== t.cell) c.classList.remove('drop-over'); });
-      if (!t) return;
-      ev.preventDefault();
-      ev.dataTransfer.dropEffect = 'move';
-      t.cell.classList.add('drop-over');
-    });
-    flow.addEventListener('drop', function (ev) {
-      var t = targetFor(ev);
-      if (!t) return;
-      ev.preventDefault();
-      var ctl = t.el.querySelector('button, a');
-      var title = dragged.el.querySelector('.fl-title');
-      clear();
-      if (!ctl) return;
-      if (ctl.tagName === 'BUTTON' && !ctl.hasAttribute('data-confirm')) {
-        ctl.setAttribute('data-confirm', t.el.getAttribute('data-move-label') + (title ? ': ' + title.textContent.trim() : '') + '?');
-      }
-      ctl.click();
-      if (ctl.tagName === 'BUTTON') ctl.removeAttribute('data-confirm');
-    });
-    flow.addEventListener('dragend', clear);
-  }
-
   // Tarefas: atalhos do lembrete («Hoje 17:00», «Amanhã 09:00», «No prazo», «Sem lembrete»).
   document.querySelectorAll('[data-remind-presets]').forEach(function (box) {
     var form = box.closest('form');
@@ -602,7 +557,10 @@
     var ckUpdate = function () {
       var all = ckList.querySelectorAll('.tk-item').length;
       var done = ckList.querySelectorAll('.tk-item.done').length;
-      ck.querySelector('[data-check-count]').textContent = done + '/' + all;
+      var cntEl = ck.querySelector('[data-check-count]');
+      var fmt = cntEl.getAttribute('data-format');
+      var pct = all ? Math.round(done / all * 100) + '%' : '0%';
+      cntEl.textContent = !all ? '0' : fmt === 'percent' ? pct : fmt === 'ambos' ? done + '/' + all + ' · ' + pct : done + '/' + all;
       var prog = ck.querySelector('.tk-progress');
       prog.hidden = !all;
       prog.querySelector('[data-check-bar]').className = 'w' + (all ? Math.round(done / all * 20) * 5 : 0);
@@ -733,5 +691,23 @@
         .then(function (r) { if (!r.ok) throw new Error(); })
         .catch(function () { window.location.reload(); });
     }, true);
+  });
+
+  // Notas das tarefas: mostram-se formatadas; «Editar notas» abre o texto (Markdown).
+  document.querySelectorAll('[data-notes]').forEach(function (box) {
+    var view = box.querySelector('[data-notes-view]');
+    var field = box.querySelector('[data-notes-field]');
+    var btn = box.querySelector('[data-notes-edit]');
+    if (!view || !btn) return;
+    if (!field.querySelector('[aria-invalid]') && !field.querySelector('.field-err')) field.hidden = true;
+    btn.hidden = false;
+    btn.addEventListener('click', function () {
+      field.hidden = false;
+      view.hidden = true;
+      btn.hidden = true;
+      var ta = field.querySelector('textarea');
+      ta.focus();
+      ta.setSelectionRange(ta.value.length, ta.value.length);
+    });
   });
 })();

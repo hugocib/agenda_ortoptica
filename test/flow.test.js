@@ -61,11 +61,14 @@ test('fluxo: página com faixas, cartões e ações; no menu', async () => {
   assert.match(r.body, /href="\/fluxo" class="nav-i active"/);
   assert.match(r.body, /Secretariado/);
   assert.match(r.body, /Investigação/);
-  assert.match(r.body, /data-col="entrada" data-lane="secretariado"/);
+  assert.match(r.body, /Vez de: <b>ortoptista<\/b>/);
+  assert.match(r.body, /Marcados para um dia que ainda não chegou/);
   assert.match(r.body, /Confirmar a reserva/);
   assert.match(r.body, /NCSF-7/);
   assert.match(r.body, /Avaliação realizada/);
-  assert.match(r.body, /draggable="true"/);
+  assert.ok(!r.body.includes('draggable'), 'sem arrastar');
+  // Um só botão por cartão (o passo seguinte)
+  for (const li of r.body.split('<li class="fl-card').slice(1)) assert.ok((li.split('</li>')[0].match(/class="btn mini/g) || []).length <= 1);
   // O botão no cartão faz o passo e volta ao quadro
   const id = db.prepare("SELECT e.id FROM exams e JOIN requests r ON r.id = e.request_id WHERE r.source = 'secretariado'").pluck().get();
   const c = await post(app, `/exames/${id}/confirmar`, hugo, { back: '/fluxo' });

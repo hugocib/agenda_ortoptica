@@ -23,8 +23,18 @@ const getColumn = (db, id) => db.prepare('SELECT * FROM task_columns WHERE id = 
 
 // Ativas = nem arquivadas nem na lixeira.
 const ACTIVE = 't.archived_at IS NULL AND t.deleted_at IS NULL';
-export const ARCHIVE_AFTER_DAYS = 14;
-export const TRASH_DAYS = 30;
+// Definições do módulo (Tarefas → roda dentada).
+export const PROGRESS_FORMATS = { fracao: '2/5', percent: '40%', ambos: '2/5 · 40%' };
+export function taskSettings(db) {
+  const n = (k, d, lo, hi) => { const v = Number(getSetting(db, k)); return Number.isInteger(v) && v >= lo && v <= hi ? v : d; };
+  const progress = getSetting(db, 'task_progress');
+  return {
+    progress: PROGRESS_FORMATS[progress] ? progress : 'fracao',
+    archiveDays: n('tasks_archive_days', 14, 0, 365),
+    trashDays: n('tasks_trash_days', 30, 1, 365),
+    inToday: getSetting(db, 'tasks_in_today') !== false,
+  };
+}
 
 const SELECT = `SELECT t.*, c.name AS col_name, c.is_done AS done, e.starts_at AS exam_starts_at, et.name AS exam_type_name,
   (SELECT COUNT(*) FROM task_items i WHERE i.task_id = t.id) AS items_total,
@@ -185,9 +195,11 @@ export function trashedTasks(db) {
 
 /** Manutenção (de minuto a minuto, junto com os lembretes): arquiva concluídas antigas e esvazia a lixeira antiga. */
 export function housekeeping(db, now = new Date()) {
-  const archiveBefore = new Date(now.getTime() - ARCHIVE_AFTER_DAYS * 86400000).toISOString();
-  const purgeBefore = new Date(now.getTime() - TRASH_DAYS * 86400000).toISOString();
-  const archived = db.prepare(`UPDATE tasks SET archived_at = ${NOW_SQL}
+  const { archiveDays, trashDays } = taskSettings(db);
+  const archiveBefore = new Date(now.getTime() - archiveDays * 86400000).toISOString();
+  const purgeBefore = new Date(now.getTime() - trashDays * 86400000).toISOString();
+  // archiveDays = 0: nunca arquivar automaticamente.
+  const archived = archiveDays === 0 ? 0 : db.prepare(`UPDATE tasks SET archived_at = ${NOW_SQL}
     WHERE archived_at IS NULL AND deleted_at IS NULL AND column_id IN ${DONE_IDS} AND done_at IS NOT NULL AND done_at < ?`).run(archiveBefore).changes;
   const purged = db.prepare('DELETE FROM tasks WHERE deleted_at IS NOT NULL AND deleted_at < ?').run(purgeBefore).changes;
   return { archived, purged };

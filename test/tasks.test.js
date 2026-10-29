@@ -141,7 +141,8 @@ test('tarefas: colunas editáveis (nome, ordem, número, concluídas) sem perder
   const hugo = await login(app, 'hugo');
   await post(app, '/tarefas', hugo, { title: 'A', column_id: '3' });
   await post(app, '/tarefas', hugo, { title: 'B', column_id: '4' });
-  assert.match((await get(app, '/tarefas/colunas', hugo)).body, /sim, tarefas para «A fazer»/);
+  assert.match((await get(app, '/tarefas/colunas', hugo)).headers.location, /\/tarefas\/definicoes#colunas/);
+  assert.match((await get(app, '/tarefas/definicoes', hugo)).body, /sim, tarefas para «A fazer»/);
   const save = (rows, done) => post(app, '/tarefas/colunas', hugo, {
     id: rows.map((r) => r.id), name: rows.map((r) => r.name), remove: rows.filter((r) => r.id).map((r) => r.remove || ''), done,
   });
@@ -241,7 +242,7 @@ test('tarefas: checklist com progresso no cartão e pesquisa no arquivo', async 
   await post(app, `/tarefas/${id}/itens/${items[1]}`, hugo, { done: '1' });
   assert.match((await get(app, '/tarefas', hugo)).body, /2\/3/);
   const page = await get(app, `/tarefas/${id}`, hugo);
-  assert.match(page.body, /data-check-count>2\/3/);
+  assert.match(page.body, /data-check-count data-format="fracao">2\/3/);
   assert.match(page.body, /aria-checked="true"/);
   assert.match(page.body, /class="w65"/);
   await post(app, `/tarefas/${id}/itens/${items[2]}/apagar`, hugo, {});
@@ -254,4 +255,81 @@ test('tarefas: checklist com progresso no cartão e pesquisa no arquivo', async 
   await post(app, `/tarefas/${id}/apagar`, hugo, {});
   await post(app, '/tarefas/lixeira/esvaziar', hugo, {});
   assert.equal(db.prepare('SELECT COUNT(*) FROM task_items').pluck().get(), 0);
+});
+
+test('tarefas: definições (progresso em %, mostrar em Hoje, dias de arquivo e lixeira)', async () => {
+  const { app, db } = await makeApp();
+  const hugo = await login(app, 'hugo');
+  const board = await get(app, '/tarefas', hugo);
+  assert.match(board.body, /href="\/tarefas\/definicoes" aria-label="Definições das tarefas"/);
+  assert.ok(!board.body.includes('>Colunas</a>'));
+  await post(app, '/tarefas', hugo, { title: 'Com checklist', due_date: dmy(todayLocal()) });
+  const id = db.prepare('SELECT id FROM tasks').pluck().get();
+  for (const t of ['a', 'b', 'c']) await post(app, `/tarefas/${id}/itens`, hugo, { text: t });
+  const it = db.prepare('SELECT id FROM task_items ORDER BY id').pluck().all();
+  await post(app, `/tarefas/${id}/itens/${it[0]}`, hugo, { done: '1' });
+  await post(app, `/tarefas/${id}/itens/${it[1]}`, hugo, { done: '1' });
+  // Percentagem
+  let r = await post(app, '/tarefas/definicoes', hugo, { task_progress: 'percent', tasks_archive_days: '7', tasks_trash_days: '10', tasks_in_today: '1' });
+  assert.match(r.headers.location, /msg=guardado/);
+  assert.match((await get(app, '/tarefas', hugo)).body, /67%/);
+  assert.match((await get(app, `/tarefas/${id}`, hugo)).body, /data-format="percent">67%/);
+  await post(app, '/tarefas/definicoes', hugo, { task_progress: 'ambos', tasks_archive_days: '7', tasks_trash_days: '10', tasks_in_today: '1' });
+  assert.match((await get(app, '/tarefas', hugo)).body, /2\/3 · 67%/);
+  assert.match((await get(app, '/tarefas/lixeira', hugo)).body, /ficam aqui 10 dias/);
+  // Arquivar ao fim de 7 dias
+  await post(app, `/tarefas/${id}/mover`, hugo, { col: 'feito', back: '/tarefas' });
+  db.prepare("UPDATE tasks SET done_at = strftime('%Y-%m-%dT%H:%M:%fZ','now','-8 days')").run();
+  assert.equal(housekeeping(db).archived, 1);
+  // Não mostrar em Hoje
+  await post(app, '/tarefas', hugo, { title: 'Prazo hoje', due_date: dmy(todayLocal()) });
+  assert.match((await get(app, '/hoje', hugo)).body, /Tarefas para hoje/);
+  await post(app, '/tarefas/definicoes', hugo, { task_progress: 'fracao', tasks_archive_days: '0', tasks_trash_days: '30' });
+  const hoje = await get(app, '/hoje', hugo);
+  assert.ok(!hoje.body.includes('Tarefas para hoje'));
+  assert.ok(!/Tarefas<\/span><span class="count/.test(hoje.body));
+  // Valores fora dos limites
+  assert.match((await post(app, '/tarefas/definicoes', hugo, { task_progress: 'x', tasks_archive_days: '7', tasks_trash_days: '10' })).headers.location, /err=/);
+  assert.match((await post(app, '/tarefas/definicoes', hugo, { task_progress: 'fracao', tasks_archive_days: '7', tasks_trash_days: '0' })).headers.location, /err=/);
+});
+
+test('datas dd/mm/aa: 20aa por omissão; nascimento no século certo', async () => {
+  const { app, db } = await makeApp();
+  const hugo = await login(app, 'hugo');
+  const t = addDays(todayLocal(), 3);
+  await post(app, '/tarefas', hugo, { title: 'Ano curto', due_date: `${t.slice(8, 10)}/${t.slice(5, 7)}/${t.slice(2, 4)}` });
+  assert.equal(db.prepare("SELECT due_date FROM tasks WHERE title = 'Ano curto'").pluck().get(), t);
+  const oct = db.prepare("SELECT id FROM exam_types WHERE code = 'oct'").pluck().get();
+  await post(app, '/pedidos', hugo, { patient_process: '1', origin: 'externo', priority: 'normal', exam_type_id: String(oct), birth_date: '03/05/58' });
+  await post(app, '/pedidos', hugo, { patient_process: '2', origin: 'externo', priority: 'normal', exam_type_id: String(oct), birth_date: '03/05/15' });
+  assert.deepEqual(db.prepare('SELECT birth_date FROM requests ORDER BY id').pluck().all(), ['1958-05-03', '2015-05-03']);
+  assert.match((await get(app, '/pedidos/novo', hugo)).body, /name="birth_date"[^>]*data-date="past"/);
+});
+
+test('notas em Markdown: títulos, listas, links seguros, sem HTML', async () => {
+  const { renderMarkdown } = await import('../src/markdown.js');
+  const h = renderMarkdown('# Protocolo\n## Passos\n### Detalhe\n###### Pequeno\n**negrito** e *itálico*\n\n- um\n  - um.a\n- [x] feito\n- [ ] por fazer\n\n1. primeiro\n\n[site](https://uc.pt/a?b=1&c=2) <img src=x onerror=alert(1)> [x](javascript:alert(1))');
+  assert.match(h, /<h2 class="md-h1">Protocolo<\/h2>/);
+  assert.match(h, /<h3 class="md-h2">Passos<\/h3>/);
+  assert.match(h, /<h4 class="md-h3">Detalhe<\/h4>/);
+  assert.match(h, /<h6 class="md-h6">Pequeno<\/h6>/);
+  assert.match(h, /<strong>negrito<\/strong> e <em>itálico<\/em>/);
+  assert.match(h, /<li>um<ul><li>um\.a<\/li><\/ul><\/li>/);
+  assert.match(h, /md-task done/);
+  assert.match(h, /<ol><li>primeiro<\/li><\/ol>/);
+  assert.match(h, /<a href="https:\/\/uc\.pt\/a\?b=1&amp;c=2" rel="noopener noreferrer" target="_blank">site<\/a>/);
+  assert.ok(!h.includes('<img'));
+  assert.ok(!h.includes('href="javascript'));
+
+  const { app, db } = await makeApp();
+  const hugo = await login(app, 'hugo');
+  await post(app, '/tarefas', hugo, { title: 'Com notas', notes: '# Plano\n- **ler**\n<script>x()</script>' });
+  const id = db.prepare('SELECT id FROM tasks').pluck().get();
+  const page = await get(app, `/tarefas/${id}`, hugo);
+  assert.match(page.body, /data-notes-view><h2 class="md-h1">Plano<\/h2>/);
+  assert.match(page.body, /<li><strong>ler<\/strong><\/li>/);
+  assert.ok(!page.body.includes('<script>x()'));
+  assert.match(page.body, /data-notes-edit/);
+  // O texto original continua no campo para editar
+  assert.match(page.body, /<textarea name="notes"[^>]*># Plano/);
 });

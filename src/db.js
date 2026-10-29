@@ -94,6 +94,10 @@ export const DEFAULT_SETTINGS = {
   report_logo: '',
   // Quadro de tarefas (experiência): desligado esconde o menu e não envia lembretes; os dados ficam.
   tasks_enabled: true,
+  task_progress: 'fracao',
+  tasks_archive_days: 14,
+  tasks_trash_days: 30,
+  tasks_in_today: true,
 };
 
 export function seed(db) {

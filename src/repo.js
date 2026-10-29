@@ -394,7 +394,7 @@ export function counts(db, today) {
       WHERE e.status = 'realizado' AND (r.id IS NULL OR r.status = 'rascunho')`),
     porFechar: one("SELECT COUNT(*) FROM exams WHERE status = 'agendado' AND starts_at < ?", `${today}T00:00`),
     tarefasOn: getSetting(db, 'tasks_enabled') !== false,
-    tarefas: countDue(db, today),
+    tarefas: getSetting(db, 'tasks_in_today') === false ? 0 : countDue(db, today),
     hoje: one("SELECT COUNT(*) FROM exams WHERE status IN ('pendente','agendado','realizado','faltou') AND starts_at >= ? AND starts_at < ?", `${today}T00:00`, `${addDays(today, 1)}T00:00`),
   };
 }

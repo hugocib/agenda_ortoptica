@@ -4,12 +4,14 @@ import { z } from 'zod';
 import { html, raw } from '../html.js';
 import { getExam, knownProjects } from '../repo.js';
 import {
-  addItem, archivedTasks, archiveTask, ARCHIVE_AFTER_DAYS, boardTasks, createTask, deleteItem, deleteTask, emptyTrash, firstColumn, getTask, listColumns,
-  listItems, MAX_COLS, MIN_COLS, moveTask, purgeTask, restoreTask, saveColumns, setItem, taskProjects, tasksEnabled, trashedTasks, TRASH_DAYS, updateTask,
+  addItem, archivedTasks, archiveTask, boardTasks, createTask, deleteItem, deleteTask, emptyTrash, firstColumn, getTask, listColumns,
+  listItems, MAX_COLS, MIN_COLS, moveTask, purgeTask, restoreTask, saveColumns, PROGRESS_FORMATS, setItem, taskProjects, taskSettings, tasksEnabled, trashedTasks, updateTask,
 } from '../tasks.js';
 import { addDays, fmtDate, isDate, normTime, nowLocal, toIsoDate, todayLocal } from '../time.js';
 import { dateInput, ERRORS, flash, help, icon, pageHead, postButton, timeInput } from '../ui.js';
 import { idParam, safeBack, send, str } from './util.js';
+import { audit, setSetting } from '../db.js';
+import { renderMarkdown } from '../markdown.js';
 
 const Schema = z.object({
   title: z.string().trim().min(1, 'Escreva a tarefa.').max(200, 'Demasiado longo (máx. 200).'),
@@ -43,10 +45,15 @@ function examRef(t) {
   return html`<a class="tk-exam" href="/exames/${t.exam_id}">${t.exam_type_name}${t.exam_starts_at ? ` · ${ddmm(t.exam_starts_at)}` : ''}</a>`;
 }
 
-export function taskCard(t, { today = todayLocal(), now = nowLocal(), back = '/tarefas', draggable = true } = {}) {
+export function progressText(done, total, format = 'fracao') {
+  const pct = `${Math.round((done / total) * 100)}%`;
+  return format === 'percent' ? pct : format === 'ambos' ? `${done}/${total} · ${pct}` : `${done}/${total}`;
+}
+
+export function taskCard(t, { today = todayLocal(), now = nowLocal(), back = '/tarefas', draggable = true, progress = 'fracao' } = {}) {
   return html`<li class="tk-card${t.done ? ' done' : ''}" data-task="${t.id}"${draggable ? raw(' draggable="true"') : ''}>
     <a class="tk-title" href="/tarefas/${t.id}">${t.title}</a>
-    <div class="tk-meta">${t.project ? html`<span class="tk-proj">${t.project}</span>` : ''}${dueBadge(t, today)}${remindBadge(t, now)}${examRef(t)}${t.items_total ? html`<span class="tk-check${t.items_done === t.items_total ? ' all' : ''}" title="Checklist">${icon('certo', 'ico xs')}${t.items_done}/${t.items_total}</span>` : ''}${t.notes ? html`<span class="tk-notes" title="Tem notas">notas</span>` : ''}</div>
+    <div class="tk-meta">${t.project ? html`<span class="tk-proj">${t.project}</span>` : ''}${dueBadge(t, today)}${remindBadge(t, now)}${examRef(t)}${t.items_total ? html`<span class="tk-check${t.items_done === t.items_total ? ' all' : ''}" title="Checklist: ${t.items_done} de ${t.items_total}">${icon('certo', 'ico xs')}${progressText(t.items_done, t.items_total, progress)}</span>` : ''}${t.notes ? html`<span class="tk-notes" title="Tem notas">notas</span>` : ''}</div>
     ${t.archived_at || t.deleted_at ? '' : html`<div class="tk-acts">${!t.done
       ? postButton(`/tarefas/${t.id}/mover`, 'Feito', { kind: 'mini', back, name: 'col', value: 'feito' })
       : postButton(`/tarefas/${t.id}/arquivar`, 'Arquivar', { kind: 'mini ghost', back })}</div>`}
@@ -68,7 +75,7 @@ function form(req, db, { task = null, values = {}, errors = {}, exam = null }) {
     active: 'tarefas',
     body: html`${pageHead(title, { back: { href: '/tarefas', label: 'Tarefas' } })}
       ${flash(req.query, req)}
-      ${task?.deleted_at ? html`<div class="notice warn"><p>Esta tarefa está na lixeira e é apagada de vez ${TRASH_DAYS} dias depois de lá ter ido.</p>${postButton(`/tarefas/${task.id}/restaurar`, 'Restaurar', { kind: 'primary' })}</div>`
+      ${task?.deleted_at ? html`<div class="notice warn"><p>Esta tarefa está na lixeira e é apagada de vez ${taskSettings(db).trashDays} dias depois de lá ter ido.</p>${postButton(`/tarefas/${task.id}/restaurar`, 'Restaurar', { kind: 'primary' })}</div>`
         : task?.archived_at ? html`<div class="notice warn"><p>Esta tarefa está no arquivo (fora do quadro).</p>${postButton(`/tarefas/${task.id}/restaurar`, 'Reabrir no quadro', { kind: 'primary' })}</div>` : ''}
       ${Object.keys(errors).length ? html`<div class="notice err" role="alert">Corrija os campos assinalados.</div>` : ''}
       <form method="post" action="${task ? `/tarefas/${task.id}` : '/tarefas'}" class="sheet form-grid guarded" novalidate>
@@ -97,7 +104,12 @@ function form(req, db, { task = null, values = {}, errors = {}, exam = null }) {
         ${linked ? html`<div class="span2 tk-link"><input type="hidden" name="exam_id" value="${linked.id}">
           <span>Ligada ao exame <a href="/exames/${linked.id}">${linked.type_name || `n.º ${linked.id}`}${linked.starts_at ? ` · ${fmtDate(linked.starts_at)} ${linked.starts_at.slice(11)}` : ''}</a></span>
           <label class="check"><input type="checkbox" name="unlink" value="1"> <span>Desligar do exame</span></label></div>` : ''}
-        <label class="span2">Notas <span class="opt">opcional</span><textarea name="notes" rows="4" maxlength="4000">${v.notes || ''}</textarea>${err('notes')}</label>
+        <div class="span2 tk-notes-box" data-notes>
+          ${task && v.notes ? html`<div class="tk-notes-h"><span class="tk-notes-l">Notas</span><button type="button" class="btn mini ghost" data-notes-edit hidden>Editar notas</button></div>
+            <div class="md tk-notes-view" data-notes-view>${raw(renderMarkdown(v.notes))}</div>` : ''}
+          <label class="tk-notes-edit" data-notes-field>Notas <span class="opt">opcional · Markdown: <code>#</code> títulos, <code>**negrito**</code>, <code>*itálico*</code>, <code>- lista</code>, <code>- [ ] item</code>, <code>[texto](https://…)</code></span>
+            <textarea name="notes" rows="${v.notes && v.notes.split('\n').length > 6 ? 12 : 5}" maxlength="4000">${v.notes || ''}</textarea>${err('notes')}</label>
+        </div>
         ${ck ? ck.body : html`<p class="span2 fhint">A checklist acrescenta-se depois de criar a tarefa.</p>`}
         <div class="span2 form-actions"><button class="btn primary" type="submit">${task ? 'Guardar' : 'Criar tarefa'}</button><a class="btn ghost" href="${linked && !task ? `/exames/${linked.id}` : '/tarefas'}">Cancelar</a></div>
       </form>
@@ -149,6 +161,7 @@ export default async function taskRoutes(app, { db }) {
     const cols = listColumns(db);
     const first = firstColumn(db);
     const trashN = db.prepare('SELECT COUNT(*) FROM tasks WHERE deleted_at IS NOT NULL').pluck().get();
+    const conf = taskSettings(db);
     const byCol = Object.fromEntries(cols.map((c) => [c.id, c.is_done ? done : open.filter((t) => t.column_id === c.id)]));
     const late = open.filter((t) => t.due_date && t.due_date < today).length;
     return send(reply, req, {
@@ -158,7 +171,7 @@ export default async function taskRoutes(app, { db }) {
       body: html`${pageHead('Tarefas', {
           sub: html`<span>${open.length} por fazer${late ? html` · <span class="late-txt">${late} ${late === 1 ? 'atrasada' : 'atrasadas'}</span>` : ''}</span>`,
           info: html`<p>Quadro livre para o seu trabalho: protocolos, pedidos a pessoas, o que tiver de fazer sobre um exame. As tarefas nunca mudam exames nem a agenda.</p><p><b>Arraste</b> para mudar de coluna ou de ordem. Com prazo ou lembrete, aparecem em «Hoje» e o lembrete chega como notificação (ative-as em A minha conta).</p><p>É uma experiência: pode desligar o quadro em Administração → Sistema, sem perder as tarefas.</p>`,
-          actions: html`<a class="btn ghost" href="/tarefas/arquivo">Arquivo</a><a class="btn ghost" href="/tarefas/lixeira">Lixeira${trashN ? html` <span class="count">${trashN}</span>` : ''}</a><a class="btn" href="/tarefas/colunas">Colunas</a><a class="btn primary" href="/tarefas/nova${project ? `?projeto=${encodeURIComponent(project)}` : ''}">Nova tarefa</a>`,
+          actions: html`<a class="btn ghost" href="/tarefas/arquivo">Arquivo</a><a class="btn ghost" href="/tarefas/lixeira">Lixeira${trashN ? html` <span class="count">${trashN}</span>` : ''}</a><a class="btn icon-only" href="/tarefas/definicoes" aria-label="Definições das tarefas" title="Definições das tarefas">${icon('definicoes')}</a><a class="btn primary" href="/tarefas/nova${project ? `?projeto=${encodeURIComponent(project)}` : ''}">Nova tarefa</a>`,
         })}
         ${flash(req.query, req)}
         ${projects.length ? html`<nav class="chips tk-filter" aria-label="Filtrar por projeto"><a class="chip${project ? '' : ' active'}" href="/tarefas"${project ? '' : raw(' aria-current="page"')}>Todas</a>${projects.map((p) => html`<a class="chip${p === project ? ' active' : ''}" href="/tarefas?projeto=${encodeURIComponent(p)}"${p === project ? raw(' aria-current="page"') : ''}>${p}</a>`)}</nav>` : ''}
@@ -169,10 +182,10 @@ export default async function taskRoutes(app, { db }) {
               <input type="hidden" name="column_id" value="${c.id}"><input type="hidden" name="project" value="${project}"><input type="hidden" name="back" value="${back}">
               <label class="sr" for="tk-q">Nova tarefa</label><input id="tk-q" name="title" maxlength="200" required placeholder="+ Nova tarefa">
               <button class="btn mini" type="submit">Adicionar</button></form>` : ''}
-            <ul class="tk-cards" data-drop="${c.id}"${c.is_done ? raw(' data-done') : ''}>${byCol[c.id].map((t) => taskCard(t, { today, now, back }))}</ul>
+            <ul class="tk-cards" data-drop="${c.id}"${c.is_done ? raw(' data-done') : ''}>${byCol[c.id].map((t) => taskCard(t, { today, now, back, progress: conf.progress }))}</ul>
             ${!byCol[c.id].length ? html`<p class="tk-none">${c.is_done ? 'Nada feito ainda.' : '—'}</p>` : ''}
             ${c.is_done && doneTotal > done.length ? html`<p class="muted small">Mostram-se as ${done.length} mais recentes de ${doneTotal}.</p>` : ''}
-            ${c.is_done ? html`<p class="muted small tk-arch-note">Vão para o <a href="/tarefas/arquivo">arquivo</a> ${ARCHIVE_AFTER_DAYS} dias depois de feitas.</p>` : ''}
+            ${c.is_done && conf.archiveDays ? html`<p class="muted small tk-arch-note">Vão para o <a href="/tarefas/arquivo">arquivo</a> ${conf.archiveDays} ${conf.archiveDays === 1 ? 'dia' : 'dias'} depois de feitas.</p>` : ''}
           </section>`)}
         </div>`,
     });
@@ -182,11 +195,27 @@ export default async function taskRoutes(app, { db }) {
   const colsPage = (req, cols, error = '') => {
     const rows = [...cols, { id: null, name: '', is_done: 0, n: 0, isNew: true }];
     const doneIdx = rows.findIndex((c) => c.is_done);
+    const conf = taskSettings(db);
     return {
-      title: 'Colunas das tarefas',
+      title: 'Definições das tarefas',
       active: 'tarefas',
-      body: html`${pageHead('Colunas', { back: { href: '/tarefas', label: 'Tarefas' }, info: html`<p>Mude o nome, a ordem (setas) e o número de colunas (${MIN_COLS} a ${MAX_COLS}).</p><p>A coluna <b>de concluídas</b> é para onde vai o botão «Feito»; as tarefas lá não aparecem em «Hoje» nem enviam lembretes.</p><p>Para apagar uma coluna com tarefas, escolha para onde passam.</p>` })}
+      body: html`${pageHead('Definições das tarefas', { back: { href: '/tarefas', label: 'Tarefas' } })}
+        ${flash(req.query, req)}
         ${error ? html`<div class="notice err" role="alert">${error}</div>` : ''}
+        <section class="sec" id="apresentacao"><div class="sec-h"><h2>Apresentação, arquivo e lixeira</h2></div>
+          <form method="post" action="/tarefas/definicoes" class="sheet form-grid">
+            <fieldset><legend>Progresso da checklist nos cartões</legend>
+              <div class="seg" role="radiogroup" aria-label="Progresso da checklist">${Object.entries(PROGRESS_FORMATS).map(([k, l]) => html`<label><input type="radio" name="task_progress" value="${k}"${conf.progress === k ? raw(' checked') : ''}> ${l}</label>`)}</div>
+            </fieldset>
+            <fieldset><legend>«Hoje»</legend>
+              <label class="check"><input type="checkbox" name="tasks_in_today" value="1"${conf.inToday ? raw(' checked') : ''}> <span>Mostrar em «Hoje» as tarefas com prazo até hoje ou lembrete já passado</span></label>
+            </fieldset>
+            <label>Arquivar concluídas ao fim de <span class="opt">dias; 0 = só à mão</span><input name="tasks_archive_days" type="number" inputmode="numeric" min="0" max="365" value="${conf.archiveDays}" class="num small-num"></label>
+            <label>Apagar de vez da lixeira ao fim de <span class="opt">dias</span><input name="tasks_trash_days" type="number" inputmode="numeric" min="1" max="365" value="${conf.trashDays}" class="num small-num"></label>
+            <div class="span2 form-actions"><button class="btn primary" type="submit">Guardar</button></div>
+          </form>
+        </section>
+        <section class="sec" id="colunas"><div class="sec-h"><h2>Colunas</h2>${help(html`<p>Mude o nome, a ordem (setas) e o número de colunas (${MIN_COLS} a ${MAX_COLS}).</p><p>A coluna <b>de concluídas</b> é para onde vai o botão «Feito»; as tarefas lá não aparecem em «Hoje» nem enviam lembretes.</p><p>Para apagar uma coluna com tarefas, escolha para onde passam.</p>`)}</div>
         <form method="post" action="/tarefas/colunas" class="sheet stack guarded" data-cols>
           <table class="tk-cols-t">
             <thead><tr><th scope="col">Ordem</th><th scope="col">Nome</th><th scope="col">Concluídas ${help('Só uma: a coluna onde ficam as tarefas feitas.')}</th><th scope="col">Tarefas</th><th scope="col">Apagar</th></tr></thead>
@@ -202,14 +231,35 @@ export default async function taskRoutes(app, { db }) {
             </tr>`)}</tbody>
           </table>
           <p class="muted small">Pode acrescentar uma coluna de cada vez na última linha. As setas mudam a ordem sem guardar; carregue em «Guardar» no fim.</p>
-          <div class="form-actions"><button class="btn primary" type="submit">Guardar colunas</button><a class="btn ghost" href="/tarefas">Cancelar</a></div>
-        </form>`,
+          <div class="form-actions"><button class="btn primary" type="submit">Guardar colunas</button></div>
+        </form></section>
+        <section class="sec quiet" id="quadro"><div class="sec-h"><h2>Quadro de tarefas</h2></div>
+          <p>O quadro está ligado. Desligado, o menu «Tarefas» desaparece e não são enviados lembretes; as tarefas ficam guardadas. Volta a ligar-se em Administração → Sistema.</p>
+          <form method="post" action="/admin/tarefas" class="inline"><button class="btn" name="on" value="0" data-confirm="Desligar o quadro de tarefas? As tarefas ficam guardadas.">Desligar o quadro</button></form>
+        </section>`,
     };
   };
 
   const withCounts = () => listColumns(db).map((c) => ({ ...c, n: db.prepare('SELECT COUNT(*) FROM tasks WHERE column_id = ?').pluck().get(c.id) }));
 
-  app.get('/tarefas/colunas', async (req, reply) => send(reply, req, colsPage(req, withCounts())));
+  app.get('/tarefas/definicoes', async (req, reply) => send(reply, req, colsPage(req, withCounts())));
+  app.get('/tarefas/colunas', async (req, reply) => reply.redirect('/tarefas/definicoes#colunas'));
+  app.post('/tarefas/definicoes', async (req, reply) => {
+    const b = req.body || {};
+    const int = (v, lo, hi) => { const n = Number.parseInt(str(v), 10); return Number.isInteger(n) && n >= lo && n <= hi ? n : null; };
+    const archive = int(b.tasks_archive_days, 0, 365);
+    const trash = int(b.tasks_trash_days, 1, 365);
+    const progress = str(b.task_progress);
+    if (archive === null || trash === null || !PROGRESS_FORMATS[progress]) return reply.redirect('/tarefas/definicoes?err=dados_invalidos');
+    db.transaction(() => {
+      setSetting(db, 'task_progress', progress);
+      setSetting(db, 'tasks_archive_days', archive);
+      setSetting(db, 'tasks_trash_days', trash);
+      setSetting(db, 'tasks_in_today', str(b.tasks_in_today) === '1');
+      audit(db, req.user.id, 'definicoes_tarefas', 'definicoes');
+    })();
+    return reply.redirect('/tarefas/definicoes?msg=guardado');
+  });
 
   app.post('/tarefas/colunas', async (req, reply) => {
     const arr = (v) => (Array.isArray(v) ? v : v === undefined ? [] : [v]).map((x) => String(x));
@@ -229,7 +279,7 @@ export default async function taskRoutes(app, { db }) {
     if (!res.ok) {
       return send(reply, req, colsPage(req, withCounts(), ERRORS[res.reason]), 400);
     }
-    return reply.redirect('/tarefas?msg=colunas');
+    return reply.redirect('/tarefas/definicoes?msg=colunas#colunas');
   });
 
   app.get('/tarefas/nova', async (req, reply) => {
@@ -323,7 +373,7 @@ export default async function taskRoutes(app, { db }) {
     return send(reply, req, {
       title: 'Arquivo de tarefas',
       active: 'tarefas',
-      body: html`${pageHead('Arquivo', { back: { href: '/tarefas', label: 'Tarefas' }, info: `Tarefas fora do quadro. As concluídas vêm para aqui sozinhas ${ARCHIVE_AFTER_DAYS} dias depois de feitas; também pode arquivar à mão. «Reabrir» volta a pô-la no quadro.` })}
+      body: html`${pageHead('Arquivo', { back: { href: '/tarefas', label: 'Tarefas' }, info: `Tarefas fora do quadro. ${taskSettings(db).archiveDays ? `As concluídas vêm para aqui sozinhas ${taskSettings(db).archiveDays} dias depois de feitas; também` : 'Pode'} arquivar à mão. «Reabrir» volta a pô-la no quadro.` })}
         ${flash(req.query, req)}
         <form method="get" action="/tarefas/arquivo" class="toolbar" role="search">
           <label><span class="sr">Pesquisar</span><input type="search" name="q" value="${q}" placeholder="Pesquisar no título, notas e checklist"></label>
@@ -342,11 +392,12 @@ export default async function taskRoutes(app, { db }) {
 
   app.get('/tarefas/lixeira', async (req, reply) => {
     const rows = trashedTasks(db);
-    const left = (t) => Math.max(0, TRASH_DAYS - Math.floor((Date.now() - Date.parse(t.deleted_at)) / 86400000));
+    const trashDays = taskSettings(db).trashDays;
+    const left = (t) => Math.max(0, trashDays - Math.floor((Date.now() - Date.parse(t.deleted_at)) / 86400000));
     return send(reply, req, {
       title: 'Lixeira de tarefas',
       active: 'tarefas',
-      body: html`${pageHead('Lixeira', { back: { href: '/tarefas', label: 'Tarefas' }, info: `As tarefas apagadas ficam aqui ${TRASH_DAYS} dias e depois são apagadas de vez.`,
+      body: html`${pageHead('Lixeira', { back: { href: '/tarefas', label: 'Tarefas' }, info: `As tarefas apagadas ficam aqui ${trashDays} dias e depois são apagadas de vez.`,
           actions: rows.length ? postButton('/tarefas/lixeira/esvaziar', 'Esvaziar lixeira', { kind: 'danger', confirm: `Apagar de vez ${rows.length} ${rows.length === 1 ? 'tarefa' : 'tarefas'}? Não dá para desfazer.` }) : '' })}
         ${flash(req.query, req)}
         ${rows.length ? html`<ul class="list tk-list">${rows.map((t) => html`<li class="tk-row">
@@ -401,8 +452,9 @@ export function checklistParts(db, task) {
   const items = listItems(db, task.id);
   const done = items.filter((i) => i.done).length;
   const base = `/tarefas/${task.id}/itens`;
+  const fmt = taskSettings(db).progress;
   const body = html`<div class="span2 tk-checklist" id="checklist" data-checklist="${task.id}">
-    <div class="tk-check-h"><span class="tk-check-l" id="h-check">Checklist</span><span class="count" data-check-count>${done}/${items.length}</span></div>
+    <div class="tk-check-h"><span class="tk-check-l" id="h-check">Checklist</span><span class="count" data-check-count data-format="${fmt}">${items.length ? progressText(done, items.length, fmt) : '0'}</span></div>
     <div class="tk-progress" aria-hidden="true"${items.length ? '' : raw(' hidden')}><span data-check-bar class="w${items.length ? Math.round((done / items.length) * 20) * 5 : 0}"></span></div>
     <ul class="tk-items" aria-labelledby="h-check">${items.map((i) => itemRow(task.id, i))}</ul>
     <div class="tk-item-add">

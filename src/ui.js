@@ -354,9 +354,9 @@ export function timeInput(name, value, { label = '', invalid = false, required =
  * Data sempre em dd/mm/aaaa: o campo nativo type="date" mostra mm/dd/aaaa num browser em inglês.
  * O servidor aceita dd/mm/aaaa (e ISO) e converte com toIsoDate.
  */
-export function dateInput(name, iso, { required = false, invalid = false, label = '' } = {}) {
+export function dateInput(name, iso, { required = false, invalid = false, label = '', past = false } = {}) {
   const v = iso && /^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : (iso || '');
-  return html`<input name="${name}" value="${v}" class="date-in" inputmode="numeric" maxlength="10" placeholder="dd/mm/aaaa" autocomplete="off" data-date${required ? raw(' required') : ''}${invalid ? raw(' aria-invalid="true"') : ''}${label ? html` aria-label="${label}"` : ''}>`;
+  return html`<input name="${name}" value="${v}" class="date-in" inputmode="numeric" maxlength="10" placeholder="dd/mm/aaaa" autocomplete="off" data-date${past ? raw('="past"') : ''}${required ? raw(' required') : ''}${invalid ? raw(' aria-invalid="true"') : ''}${label ? html` aria-label="${label}"` : ''}>`;
 }
 
 /** «terça, 27 de outubro» → «Terça, 27 de outubro» */

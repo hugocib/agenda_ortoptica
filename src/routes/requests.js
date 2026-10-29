@@ -42,7 +42,7 @@ function newForm(req, types, values = {}, errors = {}) {
           <div class="grid3">
             <label>N.º de processo (Siima) *<input name="patient_process" required maxlength="40" value="${v.patient_process || ''}" autofocus inputmode="numeric" autocomplete="off" class="mono"${inv('patient_process')}>${err('patient_process')}</label>
             <label>Nome <span class="opt">opcional</span><input name="patient_name" maxlength="120" value="${v.patient_name || ''}" autocomplete="off"${inv('patient_name')}>${err('patient_name')}</label>
-            <label>Data de nascimento <span class="opt">opcional</span>${dateInput('birth_date', v.birth_date || '', { invalid: Boolean(errors.birth_date) })}${err('birth_date')}</label>
+            <label>Data de nascimento <span class="opt">opcional</span>${dateInput('birth_date', v.birth_date || '', { invalid: Boolean(errors.birth_date), past: true })}${err('birth_date')}</label>
           </div>
         </fieldset>
         <fieldset class="span2">
@@ -116,7 +116,7 @@ export default async function requestRoutes(app, { db }) {
   app.post('/pedidos', async (req, reply) => {
     const body = req.body || {};
     const values = Object.fromEntries(['patient_process', 'patient_name', 'birth_date', 'origin', 'project', 'referrer', 'priority', 'notes', 'clinical_info', 'requisition'].map((k) => [k, str(body[k])]));
-    values.birth_date = toIsoDate(values.birth_date);
+    values.birth_date = toIsoDate(values.birth_date, { past: true });
     values.exam_type_id = arr(body.exam_type_id);
     const parsed = RequestSchema.safeParse(values);
     const errors = {};
@@ -189,7 +189,7 @@ export default async function requestRoutes(app, { db }) {
     const r = id && getRequest(db, id);
     if (!r) return reply.callNotFound();
     const back = safeBack(req.body?.back, `/pedidos/${id}`);
-    const parsed = PatientSchema.safeParse(Object.fromEntries(['patient_process', 'patient_name', 'birth_date', 'origin', 'project'].map((k) => [k, k === 'birth_date' ? toIsoDate(str(req.body?.[k])) : str(req.body?.[k])])));
+    const parsed = PatientSchema.safeParse(Object.fromEntries(['patient_process', 'patient_name', 'birth_date', 'origin', 'project'].map((k) => [k, k === 'birth_date' ? toIsoDate(str(req.body?.[k]), { past: true }) : str(req.body?.[k])])));
     // Um pedido direto tem sempre de manter o n.º de processo.
     if (!parsed.success || (r.source === 'direto' && !parsed.data.patient_process)) return reply.redirect(`${back.split('?')[0]}?err=dados_invalidos`);
     updatePatient(db, req.user, id, { ...parsed.data, birth_date: parsed.data.birth_date || null });

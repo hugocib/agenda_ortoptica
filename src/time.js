@@ -130,12 +130,22 @@ export function ageAt(birthDate, onDate) {
 }
 
 /** «28/10/2026» (ou ISO) → «2026-10-28». Se não for reconhecível, devolve o texto (a validação recusa-o). */
-export function toIsoDate(s) {
+/**
+ * «29/10/2026», «29/10/26», «29-10-26», «2026-10-29» → '2026-10-29'. Com ano de 2 dígitos usa-se
+ * 20aa; para datas que têm de estar no passado (nascimento, `past`), 19aa se 20aa ficar no futuro.
+ * Texto que não é data volta tal e qual (a validação recusa-o depois).
+ */
+export function toIsoDate(s, { past = false, today = todayLocal() } = {}) {
   const t = String(s ?? '').trim();
   if (t === '') return '';
-  const m = t.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
+  const m = t.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/);
   if (m) {
-    const iso = `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+    let y = m[3];
+    if (y.length === 2) {
+      y = `20${y}`;
+      if (past && `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` > today) y = `19${m[3]}`;
+    }
+    const iso = `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
     return isDate(iso) ? iso : t;
   }
   return t;
