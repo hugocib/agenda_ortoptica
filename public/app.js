@@ -331,6 +331,8 @@
   document.querySelectorAll('select[data-autosubmit]').forEach(function (s) {
     s.addEventListener('change', function () { if (s.form) s.form.submit(); });
   });
+  // Botões que só fazem falta sem JavaScript (p. ex. «Ver horas livres»: a lista já atualiza sozinha).
+  document.querySelectorAll('[data-nojs]').forEach(function (el) { el.hidden = true; });
 
   var swReady = null;
   if ('serviceWorker' in navigator && window.isSecureContext) {

@@ -144,7 +144,7 @@ export default async function bookingRoutes(app, { db }) {
             <form method="get" action="${base}" class="toolbar">
               <label>Exame <select name="tipo" data-autosubmit>${tipo ? '' : html`<option value="">Escolha o exame…</option>`}${types.map((t) => html`<option value="${t.id}"${tipo?.id === t.id ? raw(' selected') : ''}>${t.name} · ${roundUp(t.minutes, step)} min</option>`)}</select></label>
               <input type="hidden" name="semana" value="${monday}">
-              <button class="btn" type="submit">Ver horas livres</button>
+              <button class="btn" type="submit" data-nojs>Ver horas livres</button>
             </form>
             ${tipo ? html`<form method="post" action="${base}/reservar" class="guarded">
                 <input type="hidden" name="tipo" value="${tipo.id}">
