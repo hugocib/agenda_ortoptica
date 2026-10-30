@@ -392,6 +392,15 @@ export default async function adminRoutes(app, { db, config }) {
           <span class="aside"><a class="btn" href="/admin/requisicao.pdf" target="_blank" rel="noopener">Ver o PDF</a></span></div>
           <p class="sec-note">Cabeçalho dos relatórios, ${logoNote}. ${updated ? `Versão atual: ${fmtDate(updated)}.` : ''}</p>
           <form method="post" action="/admin/requisicao" class="stack guarded">
+            <div class="req-accent">
+              <label for="req-accent">Cor dos títulos</label>
+              <div class="toolbar">
+                <input id="req-accent" name="req_accent" type="color" value="${getSetting(db, 'req_accent')}" data-accent>
+                <button type="button" class="btn" data-accent-set="#3a3a3c">Neutro (cinzento)</button>
+                ${/^data:image\/(png|jpeg|webp|svg\+xml);/.test(logo) ? html`<button type="button" class="btn" data-accent-logo hidden>Tirar do logótipo</button><img src="${logo}" alt="" data-logo-src hidden>` : ''}
+                <span class="muted small" data-accent-msg>Se for clara demais para ler em papel, o PDF escurece-a.</span>
+              </div>
+            </div>
             <div class="form-grid">
               <label>E-mail de marcações <span class="opt">sai no topo do impresso</span><input name="req_email" type="email" maxlength="120" value="${getSetting(db, 'req_email')}" placeholder="marcacoes@…"></label>
               <label>Texto do campo de informação clínica<input name="req_clinical_label" maxlength="160" value="${getSetting(db, 'req_clinical_label')}"></label>
@@ -422,6 +431,7 @@ export default async function adminRoutes(app, { db, config }) {
     const acts = db.prepare("SELECT id FROM exam_types WHERE kind = 'clinico'").pluck().all();
     db.transaction(() => {
       setSetting(db, 'req_email', email);
+      if (/^#[0-9a-f]{6}$/i.test(str(b.req_accent))) setSetting(db, 'req_accent', str(b.req_accent).toLowerCase());
       setSetting(db, 'req_clinical_label', str(b.req_clinical_label).trim().slice(0, 160) || DEFAULT_SETTINGS.req_clinical_label);
       setSetting(db, 'req_patient_info', str(b.req_patient_info).replace(/\r\n?/g, '\n').slice(0, 6000));
       const up = db.prepare('UPDATE exam_types SET req_group = ?, req_prep = ? WHERE id = ?');

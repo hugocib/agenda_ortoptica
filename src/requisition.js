@@ -14,7 +14,6 @@ const INK = hex('#1d1d1f');
 const INK2 = hex('#55555a');
 const RULE = hex('#9a9aa0');
 const SOFT = hex('#e2e0e4');
-const ACC = hex('#7a1f4f');
 const FILL = hex('#f3f1f4');
 const WHITE = rgb(1, 1, 1);
 
@@ -31,7 +30,21 @@ export function requisitionActs(db) {
   return db.prepare("SELECT * FROM exam_types WHERE active = 1 AND kind = 'clinico' AND req_group <> '' ORDER BY sort, name").all();
 }
 
+/** Escurece uma cor até ter contraste ≥ 4.5 com o branco (texto pequeno impresso). */
+export function readableAccent(h) {
+  let c = /^#[0-9a-f]{6}$/i.test(h || '') ? h : '#3a3a3c';
+  const lum = (x) => {
+    const v = [1, 3, 5].map((i) => parseInt(x.slice(i, i + 2), 16) / 255).map((u) => (u <= 0.03928 ? u / 12.92 : ((u + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];
+  };
+  for (let i = 0; i < 40 && 1.05 / (lum(c) + 0.05) < 4.5; i++) {
+    c = `#${[1, 3, 5].map((k) => Math.round(parseInt(c.slice(k, k + 2), 16) * 0.92).toString(16).padStart(2, '0')).join('')}`;
+  }
+  return c;
+}
+
 export async function buildRequisitionPdf(db) {
+  const ACC = hex(readableAccent(getSetting(db, 'req_accent')));
   const doc = await PDFDocument.create();
   doc.setTitle('Requisição de exames — Ortóptica e Função Visual');
   doc.setAuthor('CIBIT-ICNAS · Universidade de Coimbra');

@@ -1336,3 +1336,6 @@ td.acts-col .btn + .btn { margin-left: 0.25rem; }
 .req-info { display: flex; flex-direction: column; gap: 0.35rem; }
 .req-info label { display: block; }
 @media (max-width: 760px) { .req-acts thead { display: none; } .req-acts tr { display: grid; grid-template-columns: 1fr auto; gap: 0.35rem; padding: 0.5rem 0; } .req-acts td { border: 0; padding: 0; } .req-acts td:nth-child(n+3) { grid-column: 1 / -1; } .req-acts select, .req-acts input { min-width: 0; width: 100%; } }
+.req-accent { display: flex; flex-direction: column; gap: 0.35rem; }
+.req-accent label { display: block; }
+.req-accent input[type=color] { width: 3.25rem; min-height: 2.5rem; padding: 0.2rem; cursor: pointer; }

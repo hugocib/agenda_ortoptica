@@ -121,6 +121,8 @@ export const DEFAULT_SETTINGS = {
     'Devem vir acompanhadas por um adulto responsável. Traga um brinquedo ou algo de que a criança goste; ajuda a colaborar.',
   ].join('\n'),
   req_updated_at: null,
+  // Cor dos títulos do impresso (neutra por omissão; pode tirar-se do logótipo).
+  req_accent: '#3a3a3c',
 };
 
 export function seed(db) {

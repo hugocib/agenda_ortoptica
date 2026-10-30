@@ -796,4 +796,47 @@
       if (k === 'i') { ev.preventDefault(); cmds.italic(); }
     });
   });
+
+  // Cor dos títulos do impresso: «Neutro» ou a cor dominante do logótipo (ignora brancos,
+  // pretos e cinzentos; agrupa cores parecidas e escolhe o grupo com mais píxeis).
+  var accent = document.querySelector('[data-accent]');
+  if (accent) {
+    var msg = document.querySelector('[data-accent-msg]');
+    document.querySelectorAll('[data-accent-set]').forEach(function (b) {
+      b.addEventListener('click', function () { accent.value = b.getAttribute('data-accent-set'); });
+    });
+    var logoBtn = document.querySelector('[data-accent-logo]');
+    var img = document.querySelector('[data-logo-src]');
+    if (logoBtn && img) {
+      logoBtn.hidden = false;
+      logoBtn.addEventListener('click', function () {
+        var cv = document.createElement('canvas');
+        var n = 96;
+        var r = Math.min(n / (img.naturalWidth || n), n / (img.naturalHeight || n));
+        cv.width = Math.max(1, Math.round((img.naturalWidth || n) * r));
+        cv.height = Math.max(1, Math.round((img.naturalHeight || n) * r));
+        var ctx = cv.getContext('2d');
+        ctx.drawImage(img, 0, 0, cv.width, cv.height);
+        var d = ctx.getImageData(0, 0, cv.width, cv.height).data;
+        var buckets = {};
+        for (var k = 0; k < d.length; k += 4) {
+          var R = d[k], G = d[k + 1], B = d[k + 2], A = d[k + 3];
+          if (A < 128) continue;
+          var mx = Math.max(R, G, B), mn = Math.min(R, G, B);
+          if (mx > 240 && mn > 225) continue; // branco
+          if (mx < 25) continue; // preto
+          if (mx - mn < 28) continue; // cinzento
+          var key = (R >> 4) + '-' + (G >> 4) + '-' + (B >> 4);
+          var bk = buckets[key] || (buckets[key] = { n: 0, r: 0, g: 0, b: 0 });
+          bk.n++; bk.r += R; bk.g += G; bk.b += B;
+        }
+        var best = null;
+        Object.keys(buckets).forEach(function (key) { if (!best || buckets[key].n > best.n) best = buckets[key]; });
+        if (!best) { accent.value = '#3a3a3c'; msg.textContent = 'O logótipo não tem cor dominante: ficou o cinzento neutro.'; return; }
+        var hx = function (v) { v = Math.round(v / best.n); return (v < 16 ? '0' : '') + v.toString(16); };
+        accent.value = '#' + hx(best.r) + hx(best.g) + hx(best.b);
+        msg.textContent = 'Cor tirada do logótipo. Guarde para aplicar.';
+      });
+    }
+  }
 })();

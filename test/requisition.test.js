@@ -66,6 +66,15 @@ test('requisição: PDF editável a partir dos atos; link no secretariado; defin
     assert.match(txt, /Versão de \d+ de \w+ de \d{4}/);
     assert.ok(!/\bEOG\b/.test(txt.split('Duração')[1] || ''), 'EOG fora da tabela de durações');
   }
+  // Cor dos títulos: neutra por omissão; aceita só #rrggbb
+  assert.equal(getSetting(db, 'req_accent'), '#3a3a3c');
+  await post(app, '/admin/requisicao', hugo, { req_email: '', req_accent: '#005A8C' });
+  assert.equal(getSetting(db, 'req_accent'), '#005a8c');
+  await post(app, '/admin/requisicao', hugo, { req_email: '', req_accent: 'red;x' });
+  assert.equal(getSetting(db, 'req_accent'), '#005a8c');
+  const { readableAccent } = await import('../src/requisition.js');
+  assert.equal(readableAccent('#3a3a3c'), '#3a3a3c');
+  assert.notEqual(readableAccent('#ffdd00'), '#ffdd00', 'amarelo claro é escurecido');
   // E-mail inválido recusado
   assert.match((await post(app, '/admin/requisicao', hugo, { req_email: 'não é email' })).headers.location, /err=/);
   // Só o ortoptista vê a pré-visualização da administração
