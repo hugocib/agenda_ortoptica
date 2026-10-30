@@ -167,12 +167,12 @@ function nav(user, counts, active) {
 export const MARK = raw(`<svg class="mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="7" class="mark-bg"/><path d="M4.5 16c3.4-4.6 7.3-6.9 11.5-6.9s8.1 2.3 11.5 6.9c-3.4 4.6-7.3 6.9-11.5 6.9S7.9 20.6 4.5 16z" class="mark-eye"/><circle cx="16" cy="16" r="4.2" class="mark-iris"/><circle cx="16" cy="16" r="1.7" class="mark-pupil"/></svg>`);
 
 /** Botão claro/escuro da página de reservas (sem JS alterna pelo servidor; com JS sabe o modo do sistema). */
-function modeToggle(req, mode) {
+function modeToggle(req, mode, action = '/aparencia/modo-reservas') {
   const next = mode === 'escuro' ? 'claro' : 'escuro';
-  return html`<form method="post" action="/aparencia/modo-reservas" class="mode-toggle">
+  return html`<form method="post" action="${action}" class="mode-toggle">
     <input type="hidden" name="back" value="${String(req.url || '').split('#')[0]}">
-    <button class="btn ghost" type="submit" name="modo" value="${next}" data-mode-toggle="${mode}" aria-label="${next === 'escuro' ? 'Mudar para modo escuro' : 'Mudar para modo claro'}" title="${next === 'escuro' ? 'Modo escuro' : 'Modo claro'}">
-      ${icon('lua', 'ico mode-dark')}${icon('sol', 'ico mode-light')}<span class="mode-l">${next === 'escuro' ? 'Escuro' : 'Claro'}</span></button></form>`;
+    <button class="btn ghost icon-only" type="submit" name="modo" value="${next}" data-mode-toggle="${mode}" aria-label="${next === 'escuro' ? 'Mudar para modo escuro' : 'Mudar para modo claro'}" title="${next === 'escuro' ? 'Modo escuro' : 'Modo claro'}">
+      ${icon('lua', 'ico mode-dark')}${icon('sol', 'ico mode-light')}</button></form>`;
 }
 
 export function layout(req, { title, body, active = '', autorefresh = false, bare = false, wide = false, pub = false }) {
@@ -204,7 +204,7 @@ ${metas}
 ${bare ? '' : html`<header class="top">
   ${pub ? html`<span class="brand">${MARK}<span>Ortóptica</span><span class="brand-sub">reservas</span></span>` : html`<a class="brand" href="/hoje">${MARK}<span>Ortóptica</span></a>`}
   ${pub ? modeToggle(req, look.mode) : nav(user, counts, active)}
-  ${user && !pub ? html`<div class="who"><a href="/conta" class="${active === 'conta' ? 'active' : ''}" title="A minha conta">${user.name}</a>
+  ${user && !pub ? html`<div class="who">${modeToggle(req, look.mode, '/aparencia/modo')}<a href="/conta" class="${active === 'conta' ? 'active' : ''}" title="A minha conta">${user.name}</a>
     <form method="post" action="/logout"><button class="btn link" type="submit">Sair</button></form></div>` : ''}
 </header>`}
 <div class="netbar" id="netbar" role="status" aria-live="polite" hidden></div>

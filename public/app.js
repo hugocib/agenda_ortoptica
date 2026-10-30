@@ -176,8 +176,7 @@
     mt.value = dark ? 'claro' : 'escuro';
     mt.setAttribute('aria-label', dark ? 'Mudar para modo claro' : 'Mudar para modo escuro');
     mt.classList.toggle('is-dark', dark);
-    var ml = mt.querySelector('.mode-l');
-    if (ml) ml.textContent = dark ? 'Claro' : 'Escuro';
+    mt.title = dark ? 'Modo claro' : 'Modo escuro';
   }
 
   // «Recusar…»: abre o painel do motivo no próprio item (sem JS, a ligação abre-o pelo servidor).

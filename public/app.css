@@ -1339,3 +1339,7 @@ td.acts-col .btn + .btn { margin-left: 0.25rem; }
 .req-accent { display: flex; flex-direction: column; gap: 0.35rem; }
 .req-accent label { display: block; }
 .req-accent input[type=color] { width: 3.25rem; min-height: 2.5rem; padding: 0.2rem; cursor: pointer; }
+/* Claro/escuro: só o ícone, no canto superior direito (app e página de reservas). */
+.who .mode-toggle { margin: 0 0.25rem 0 0; }
+.mode-toggle .btn.icon-only { width: 2.4rem; min-height: 2.4rem; padding: 0; border-radius: var(--r); }
+.mode-toggle .btn.icon-only .ico { width: 1.15rem; height: 1.15rem; }
