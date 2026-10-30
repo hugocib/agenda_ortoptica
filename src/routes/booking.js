@@ -62,12 +62,27 @@ function weekSlots(db, { monday, minutes, typeId, ignoreExamId = null }) {
   return { days, ctx };
 }
 
+/** Primeira hora livre para o exame, de hoje até ao fim do horizonte de marcação (ou null). */
+function nextFree(db, { minutes, typeId, ignoreExamId = null }) {
+  const today = todayLocal();
+  const days = getSetting(db, 'horizon_weeks') * 7;
+  const ctx = scheduleContext(db, today, addDays(today, days));
+  const d = freeSlots({ fromDate: today, days, minutes, typeId, ...ctx, now: nowLocal(), ignoreExamId }).find((x) => x.times.length);
+  return d ? { date: d.date, time: d.times[0] } : null;
+}
+
+/** Semana sem vagas: diz qual é a próxima hora livre e leva lá. */
+function noSlots(next, weekHref, weeks) {
+  if (!next) return html`<p class="empty">Sem horas livres para este exame nas próximas ${weeks} semanas.</p>`;
+  return html`<p class="empty">Sem horas livres nesta semana. Próxima hora livre: <a href="${weekHref(mondayOf(next.date))}">${fmtDateLong(next.date)} às ${next.time}</a>.</p>`;
+}
+
 /**
  * Vagas como escolha (rádio), não como envio: tocar numa hora só a seleciona. A reserva só é
  * feita no botão da barra de confirmação, que mostra o resumo do que vai ser enviado.
  */
-function slotPicker(days, availability, { exam, submit }) {
-  if (!days.length) return html`<p class="empty">Sem vagas para este exame nesta semana. Experimente a semana seguinte.</p>`;
+function slotPicker(days, availability, { exam, submit, empty = '' }) {
+  if (!days.length) return empty || html`<p class="empty">Sem vagas para este exame nesta semana.</p>`;
   let first = true;
   const radio = (d, t) => {
     const req = first ? raw(' required') : '';
@@ -121,7 +136,9 @@ export default async function bookingRoutes(app, { db }) {
     const tipo = types.find((t) => String(t.id) === str(req.query.tipo)) || null;
     const first = mondayOf(today);
     const last = mondayOf(addDays(today, getSetting(db, 'horizon_weeks') * 7 - 1));
-    let monday = mondayOf(isDate(str(req.query.semana)) ? str(req.query.semana) : today);
+    // Ao escolher o exame (sem semana pedida), abre na semana da primeira hora livre.
+    const next = tipo ? nextFree(db, { minutes: tipo.minutes, typeId: tipo.id }) : null;
+    let monday = mondayOf(isDate(str(req.query.semana)) ? str(req.query.semana) : next ? next.date : today);
     if (monday < first) monday = first;
     if (monday > last) monday = last;
     const names = getSetting(db, 'booking_names') || [];
@@ -143,7 +160,6 @@ export default async function bookingRoutes(app, { db }) {
             <div class="sec-h"><h2 id="h-nova">Nova reserva</h2></div>
             <form method="get" action="${base}" class="toolbar">
               <label>Exame <select name="tipo" data-autosubmit>${tipo ? '' : html`<option value="">Escolha o exame…</option>`}${types.map((t) => html`<option value="${t.id}"${tipo?.id === t.id ? raw(' selected') : ''}>${t.name} · ${roundUp(t.minutes, step)} min</option>`)}</select></label>
-              <input type="hidden" name="semana" value="${monday}">
               <button class="btn" type="submit" data-nojs>Ver horas livres</button>
             </form>
             ${tipo ? html`<form method="post" action="${base}/reservar" class="guarded">
@@ -154,7 +170,7 @@ export default async function bookingRoutes(app, { db }) {
                 </div>
                 <div class="book-week"><p class="sec-note">Escolha a hora e confirme em baixo (${tipo.name}: <b>${roundUp(tipo.minutes, step)} min</b>).</p>
                   ${weekNav(`${base}?tipo=${tipo.id}&`, monday, first, last)}</div>
-                ${slotPicker(days, ctx?.availability || [], { exam: tipo.name, submit: 'Confirmar reserva' })}
+                ${slotPicker(days, ctx?.availability || [], { exam: tipo.name, submit: 'Confirmar reserva', empty: noSlots(next, (w) => `${base}?tipo=${tipo.id}&semana=${w}`, getSetting(db, 'horizon_weeks')) })}
               </form>` : html`<p class="empty">Escolha o tipo de exame para ver as horas livres.</p>`}
           </section>
           <section class="sec book-list" id="reservas" aria-labelledby="h-res">
@@ -245,7 +261,8 @@ export default async function bookingRoutes(app, { db }) {
           <form method="post" action="${here}/mover" class="guarded">
             <div class="form-grid book-who">${whoField(names, chosen)}</div>
             <div class="book-week">${weekNav(`${here}?`, monday, first, last)}</div>
-            ${slotPicker(days, ctx?.availability || [], { exam: e.type_name, submit: pending ? 'Confirmar nova hora' : 'Enviar pedido de alteração' })}
+            ${slotPicker(days, ctx?.availability || [], { exam: e.type_name, submit: pending ? 'Confirmar nova hora' : 'Enviar pedido de alteração',
+              empty: days.length ? '' : noSlots(nextFree(db, { minutes: e.minutes, typeId: e.exam_type_id, ignoreExamId: e.id }), (w) => `${here}?semana=${w}`, getSetting(db, 'horizon_weeks')) })}
           </form></section>
           <section class="sec"><div class="sec-h"><h2>${pending ? 'Anular' : 'Cancelar'}</h2></div>
             <form method="post" action="${here}/cancelar" class="toolbar">${whoField(names, chosen)}

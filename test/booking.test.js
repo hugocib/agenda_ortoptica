@@ -268,3 +268,22 @@ test('página de reservas: tema fixo próprio e claro/escuro só para o link', a
   // Não deixa redirecionar para fora das reservas
   assert.equal((await post(app, '/aparencia/modo-reservas', null, { modo: 'claro', back: '/admin' })).headers.location, '/');
 });
+
+test('link de reservas: abre na semana da primeira hora livre; semana sem vagas aponta para a próxima', async () => {
+  const { app, db, base, types } = await setup();
+  // Bloqueia as próximas 2 semanas inteiras: a primeira hora livre fica mais à frente
+  const hugo = await login(app, 'hugo');
+  const today = todayLocal();
+  const end = addDays(today, 14);
+  const dmy = (d) => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;
+  await post(app, '/bloqueios', hugo, { date_from: dmy(today), date_to: dmy(end), time_from: '', time_to: '', reason: 'Férias' });
+  const page = await get(app, `${base}?tipo=${types.oct}`);
+  const firstSlot = page.body.match(/name="start" value="(\d{4}-\d{2}-\d{2})T/);
+  assert.ok(firstSlot, 'mostra horas sem ter de avançar semanas');
+  assert.ok(firstSlot[1] > end, 'a primeira hora mostrada é depois do bloqueio');
+  // Semana atual pedida explicitamente: sem vagas, com link para a próxima
+  const now = await get(app, `${base}?tipo=${types.oct}&semana=${today}`);
+  assert.match(now.body, /Sem horas livres nesta semana\. Próxima hora livre: <a href="[^"]*semana=\d{4}-\d{2}-\d{2}">/);
+  // Escolher o exame já não leva a semana atual no formulário
+  assert.ok(!/<input type="hidden" name="semana"/.test(page.body));
+});
