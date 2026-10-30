@@ -8,7 +8,7 @@ import {
   listItems, MAX_COLS, MIN_COLS, moveTask, purgeTask, restoreTask, saveColumns, PROGRESS_FORMATS, setItem, taskProjects, taskSettings, tasksEnabled, trashedTasks, updateTask,
 } from '../tasks.js';
 import { addDays, fmtDate, isDate, normTime, nowLocal, toIsoDate, todayLocal } from '../time.js';
-import { dateInput, ERRORS, flash, help, icon, pageHead, postButton, timeInput } from '../ui.js';
+import { dateInput, ERRORS, flash, help, icon, mdToolbar, pageHead, postButton, timeInput } from '../ui.js';
 import { idParam, safeBack, send, str } from './util.js';
 import { audit, setSetting } from '../db.js';
 import { renderMarkdown } from '../markdown.js';
@@ -25,13 +25,6 @@ const Schema = z.object({
   if (Boolean(v.remind_date) !== Boolean(v.remind_time)) ctx.addIssue({ code: 'custom', path: ['remind_date'], message: 'Indique o dia e a hora do lembrete (ou nenhum).' });
 });
 
-// Barra de formatação das notas: [comando, nome, texto do botão, classe].
-const MD_TOOLS = [
-  [['h1', 'Título 1', 'H1'], ['h2', 'Título 2', 'H2'], ['h3', 'Título 3', 'H3']],
-  [['bold', 'Negrito (Ctrl+B)', 'B', 'b'], ['italic', 'Itálico (Ctrl+I)', 'I', 'i'], ['strike', 'Riscado', 'S', 's'], ['code', 'Código', '‹›']],
-  [['ul', 'Lista', '•', 'dot'], ['ol', 'Lista numerada', '1.'], ['task', 'Item a marcar', '☐'], ['quote', 'Citação', '❝']],
-  [['link', 'Link', 'Link'], ['hr', 'Linha separadora', '—']],
-];
 
 const ddmm = (d) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
 
@@ -117,9 +110,7 @@ function form(req, db, { task = null, values = {}, errors = {}, exam = null }) {
             <div class="md tk-notes-view" data-notes-view>${raw(renderMarkdown(v.notes))}</div>` : ''}
           <div class="tk-notes-edit" data-notes-field>
             <label for="tk-notes">Notas <span class="opt">opcional · Markdown: <code>#</code> títulos, <code>**negrito**</code>, <code>*itálico*</code>, <code>- lista</code>, <code>- [ ] item</code>, <code>[texto](https://…)</code></span></label>
-            <div class="md-bar" role="toolbar" aria-label="Formatação das notas" aria-controls="tk-notes" data-md-bar hidden>
-              ${MD_TOOLS.map((g) => html`<span class="md-group">${g.map(([cmd, label, text, cls]) => html`<button type="button" class="md-btn${cls ? ` ${cls}` : ''}" data-md="${cmd}" aria-label="${label}" title="${label}">${text}</button>`)}</span>`)}
-            </div>
+            ${mdToolbar('tk-notes', 'Formatação das notas')}
             <textarea id="tk-notes" name="notes" rows="${v.notes && v.notes.split('\n').length > 6 ? 12 : 5}" maxlength="4000">${v.notes || ''}</textarea>${err('notes')}
           </div>
         </div>

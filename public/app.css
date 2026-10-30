@@ -1329,3 +1329,10 @@ td.acts-col .btn + .btn { margin-left: 0.25rem; }
   .md-bar { gap: 0.25rem 0.5rem; }
   .md-group + .md-group { padding-left: 0; border-left: 0; }
 }
+/* Administração → Requisição */
+.req-acts td { vertical-align: middle; }
+.req-acts select { min-width: 12rem; }
+.req-acts input { min-width: 14rem; }
+.req-info { display: flex; flex-direction: column; gap: 0.35rem; }
+.req-info label { display: block; }
+@media (max-width: 760px) { .req-acts thead { display: none; } .req-acts tr { display: grid; grid-template-columns: 1fr auto; gap: 0.35rem; padding: 0.5rem 0; } .req-acts td { border: 0; padding: 0; } .req-acts td:nth-child(n+3) { grid-column: 1 / -1; } .req-acts select, .req-acts input { min-width: 0; width: 100%; } }

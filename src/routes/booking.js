@@ -4,6 +4,7 @@
 import crypto from 'node:crypto';
 import { html, raw } from '../html.js';
 import { getSetting } from '../db.js';
+import { buildRequisitionPdf } from '../requisition.js';
 import { getExam, examsWhere, listExamTypes, requestCancel, requestMove, reserve, scheduleContext, setRequisition, withdrawChange } from '../repo.js';
 import { freeSlots, roundUp } from '../domain/slots.js';
 import { notify } from '../push.js';
@@ -135,7 +136,7 @@ export default async function bookingRoutes(app, { db }) {
       pub: true,
       wide: true,
       autorefresh: 120,
-      body: html`${pageHead('Reservar exame', { sub: 'Escolha o exame e depois a hora. Sem dados do doente.', info: html`<p>A reserva fica «por confirmar» até o ortoptista a confirmar; o estado aparece na lista de reservas.</p><p>Enquanto não estiver confirmada pode mudar a hora ou anular. Depois de confirmada, pode pedir uma alteração ou o cancelamento.</p>` })}
+      body: html`${pageHead('Reservar exame', { actions: html`<a class="btn" href="${base}/requisicao.pdf" download>Requisição em branco (PDF)</a>`, sub: 'Escolha o exame e depois a hora. Sem dados do doente.', info: html`<p>A reserva fica «por confirmar» até o ortoptista a confirmar; o estado aparece na lista de reservas.</p><p>Enquanto não estiver confirmada pode mudar a hora ou anular. Depois de confirmada, pode pedir uma alteração ou o cancelamento.</p>` })}
         ${flash(req.query, req)}
         <div class="book">
           <section class="sec book-new" aria-labelledby="h-nova">
@@ -169,6 +170,12 @@ export default async function bookingRoutes(app, { db }) {
           </section>
         </div>`,
     });
+  });
+
+  // Impresso de requisição em branco, para enviar aos médicos (sem dados nenhuns).
+  app.get('/r/:token/requisicao.pdf', async (req, reply) => {
+    const pdf = await buildRequisitionPdf(db);
+    return reply.type('application/pdf').header('Content-Disposition', 'attachment; filename="requisicao-exames-ortoptica.pdf"').header('Cache-Control', 'no-cache').send(Buffer.from(pdf));
   });
 
   app.post('/r/:token/reservar', async (req, reply) => {

@@ -363,3 +363,18 @@ export function dateInput(name, iso, { required = false, invalid = false, label 
 export function cap(s) { return s ? s[0].toUpperCase() + s.slice(1) : s; }
 
 export function fmtD(d) { return fmtDate(d); }
+
+// Barra de formatação das notas: [comando, nome, texto do botão, classe].
+export const MD_TOOLS = [
+  [['h1', 'Título 1', 'H1'], ['h2', 'Título 2', 'H2'], ['h3', 'Título 3', 'H3']],
+  [['bold', 'Negrito (Ctrl+B)', 'B', 'b'], ['italic', 'Itálico (Ctrl+I)', 'I', 'i'], ['strike', 'Riscado', 'S', 's'], ['code', 'Código', '‹›']],
+  [['ul', 'Lista', '•', 'dot'], ['ol', 'Lista numerada', '1.'], ['task', 'Item a marcar', '☐'], ['quote', 'Citação', '❝']],
+  [['link', 'Link', 'Link'], ['hr', 'Linha separadora', '—']],
+];
+
+/** Barra de botões Markdown para um <textarea id=targetId> (o app.js liga-a; sem JS fica escondida). */
+export function mdToolbar(targetId, label = 'Formatação') {
+  return html`<div class="md-bar" role="toolbar" aria-label="${label}" aria-controls="${targetId}" data-md-bar hidden>
+    ${MD_TOOLS.map((g) => html`<span class="md-group">${g.map(([cmd, name, text, cls]) => html`<button type="button" class="md-btn${cls ? ` ${cls}` : ''}" data-md="${cmd}" aria-label="${name}" title="${name}">${text}</button>`)}</span>`)}
+  </div>`;
+}

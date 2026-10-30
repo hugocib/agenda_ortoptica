@@ -2,21 +2,22 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { html, raw } from '../html.js';
-import { audit, getSetting, setSetting } from '../db.js';
+import { audit, DEFAULT_SETTINGS, getSetting, setSetting } from '../db.js';
+import { buildRequisitionPdf, REQ_GROUPS } from '../requisition.js';
 import { destroyUserSessions, generatePassword, hashPassword } from '../auth.js';
 import { isBackupName, listBackups, runBackup } from '../backup.js';
 import { formFromTemplate, numericFields, parseForm } from '../domain/reports.js';
 import fichaRoutes from './ficha.js';
 import { THEME_IDS, THEMES } from '../themes.js';
-import { isTime, toMin } from '../time.js';
-import { flash, help, icon, pageHead, timeSelect } from '../ui.js';
+import { fmtDate, isTime, todayLocal, toMin } from '../time.js';
+import { flash, help, icon, mdToolbar, pageHead, timeSelect } from '../ui.js';
 import { forbid, idParam, isOrtho, send, str } from './util.js';
 
 const WEEKDAYS = [[1, 'Segunda'], [2, 'Terça'], [3, 'Quarta'], [4, 'Quinta'], [5, 'Sexta'], [6, 'Sábado']];
 
 function tabs(active) {
   const t = (href, label, key) => html`<a href="${href}" class="${active === key ? 'active' : ''}">${label}</a>`;
-  return html`<nav class="tabs">${t('/admin', 'Horário', 'geral')}${t('/admin/exames', 'Atos / MCDTs', 'exames')}${t('/admin/reservas', 'Reservas', 'reservas')}${t('/admin/utilizadores', 'Utilizadores', 'users')}${t('/admin/sistema', 'Sistema', 'sistema')}</nav>`;
+  return html`<nav class="tabs">${t('/admin', 'Horário', 'geral')}${t('/admin/exames', 'Atos / MCDTs', 'exames')}${t('/admin/reservas', 'Reservas', 'reservas')}${t('/admin/requisicao', 'Requisição', 'requisicao')}${t('/admin/utilizadores', 'Utilizadores', 'users')}${t('/admin/sistema', 'Sistema', 'sistema')}</nav>`;
 }
 
 /** Janelas de um dia em manhã (começa antes das 13:00) e tarde (a seguinte). */
@@ -357,6 +358,7 @@ export default async function adminRoutes(app, { db, config }) {
       const up = db.prepare('UPDATE exam_types SET name = @name, minutes = @minutes, max_per_day = @max, active = @active WHERE id = @id');
       for (const r of rows) up.run(r);
       audit(db, req.user.id, 'alterar', 'tipo_exame', null, { n: rows.length });
+      setSetting(db, 'req_updated_at', todayLocal());
     })();
     return reply.redirect('/admin/exames?msg=guardado');
   });
@@ -374,6 +376,69 @@ export default async function adminRoutes(app, { db, config }) {
     const id = Number(info.lastInsertRowid);
     audit(db, req.user.id, 'criar', 'tipo_exame', id);
     return reply.redirect(`/admin/exames/${id}/ficha?msg=guardado`);
+  });
+
+  // ---------- Impresso de requisição ----------
+  app.get('/admin/requisicao', async (req, reply) => {
+    const acts = db.prepare("SELECT * FROM exam_types WHERE active = 1 AND kind = 'clinico' ORDER BY sort, name").all();
+    const logo = getSetting(db, 'report_logo') || '';
+    const logoNote = !logo ? 'sem logótipo' : /^data:image\/(png|jpeg);/.test(logo) ? 'com o logótipo' : 'o logótipo está em SVG/WebP e não entra no PDF (use PNG ou JPG)';
+    const updated = getSetting(db, 'req_updated_at');
+    return send(reply, req, {
+      title: 'Requisição',
+      active: 'admin',
+      body: html`${pageHead('Administração')}${tabs('requisicao')}${flash(req.query, req)}
+        <section class="sec"><div class="sec-h"><h2>Impresso de requisição</h2>${help(html`<p>O impresso que o médico preenche para pedir exames. Gera-se sempre a partir destas definições e dos atos/MCDTs; o secretariado descarrega-o na página de reservas.</p><p>Cabeçalho e logótipo são os dos relatórios (<a href="/admin/sistema">Sistema → Relatórios</a>).</p>`)}
+          <span class="aside"><a class="btn" href="/admin/requisicao.pdf" target="_blank" rel="noopener">Ver o PDF</a></span></div>
+          <p class="sec-note">Cabeçalho dos relatórios, ${logoNote}. ${updated ? `Versão atual: ${fmtDate(updated)}.` : ''}</p>
+          <form method="post" action="/admin/requisicao" class="stack guarded">
+            <div class="form-grid">
+              <label>E-mail de marcações <span class="opt">sai no topo do impresso</span><input name="req_email" type="email" maxlength="120" value="${getSetting(db, 'req_email')}" placeholder="marcacoes@…"></label>
+              <label>Texto do campo de informação clínica<input name="req_clinical_label" maxlength="160" value="${getSetting(db, 'req_clinical_label')}"></label>
+            </div>
+            <fieldset><legend>Exames no impresso</legend>
+              <p class="sec-note">Atos clínicos ativos. «—» = não aparece. A nota de preparação sai na página 2, junto à duração.</p>
+              <table class="table req-acts"><thead><tr><th scope="col">Ato</th><th scope="col">Duração</th><th scope="col">Grupo no impresso</th><th scope="col">Nota de preparação <span class="opt">opcional</span></th></tr></thead>
+              <tbody>${acts.map((t) => html`<tr><td>${t.name}</td><td class="muted">${fmtMin(t.minutes)}</td>
+                <td><select name="group.${t.id}" aria-label="Grupo de ${t.name}"><option value="">—</option>${REQ_GROUPS.map((g) => html`<option value="${g.key}"${t.req_group === g.key ? raw(' selected') : ''}>${g.label}</option>`)}</select></td>
+                <td><input name="prep.${t.id}" maxlength="90" value="${t.req_prep}" aria-label="Nota de preparação de ${t.name}" placeholder="p. ex. inclui dilatação"></td></tr>`)}</tbody></table>
+            </fieldset>
+            <div class="req-info">
+              <label for="req-info">Página 2 — informação para o doente <span class="opt">Markdown: ## título, **negrito**, - lista. A tabela de durações acrescenta-se sozinha.</span></label>
+              ${mdToolbar('req-info', 'Formatação da informação para o doente')}
+              <textarea id="req-info" name="req_patient_info" rows="16" maxlength="6000">${getSetting(db, 'req_patient_info')}</textarea>
+            </div>
+            <div class="form-actions"><button class="btn primary" type="submit">Guardar</button><a class="btn ghost" href="/admin/requisicao.pdf" target="_blank" rel="noopener">Ver o PDF</a></div>
+          </form>
+        </section>`,
+    });
+  });
+
+  app.post('/admin/requisicao', async (req, reply) => {
+    const b = req.body || {};
+    const email = str(b.req_email).trim().slice(0, 120);
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return reply.redirect('/admin/requisicao?err=dados_invalidos');
+    const groups = new Set(['', ...REQ_GROUPS.map((g) => g.key)]);
+    const acts = db.prepare("SELECT id FROM exam_types WHERE kind = 'clinico'").pluck().all();
+    db.transaction(() => {
+      setSetting(db, 'req_email', email);
+      setSetting(db, 'req_clinical_label', str(b.req_clinical_label).trim().slice(0, 160) || DEFAULT_SETTINGS.req_clinical_label);
+      setSetting(db, 'req_patient_info', str(b.req_patient_info).replace(/\r\n?/g, '\n').slice(0, 6000));
+      const up = db.prepare('UPDATE exam_types SET req_group = ?, req_prep = ? WHERE id = ?');
+      for (const id of acts) {
+        if (b[`group.${id}`] === undefined) continue;
+        const g = str(b[`group.${id}`]);
+        up.run(groups.has(g) ? g : '', str(b[`prep.${id}`]).trim().slice(0, 90), id);
+      }
+      setSetting(db, 'req_updated_at', todayLocal());
+      audit(db, req.user.id, 'alterar_requisicao', 'definicoes');
+    })();
+    return reply.redirect('/admin/requisicao?msg=guardado');
+  });
+
+  app.get('/admin/requisicao.pdf', async (req, reply) => {
+    const pdf = await buildRequisitionPdf(db);
+    return reply.type('application/pdf').header('Content-Disposition', 'inline; filename="requisicao-exames.pdf"').header('Cache-Control', 'no-store').send(Buffer.from(pdf));
   });
 
   // ---------- Utilizadores ----------

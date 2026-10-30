@@ -98,6 +98,29 @@ export const DEFAULT_SETTINGS = {
   tasks_archive_days: 14,
   tasks_trash_days: 30,
   tasks_in_today: true,
+  // Impresso de requisição (Administração → Requisição).
+  req_email: '',
+  req_clinical_label: 'Suspeita diagnóstica e informação relevante, incluindo medicação (p. ex. hidroxicloroquina, vigabatrina) — sai no relatório',
+  req_patient_info: [
+    '## Marcação',
+    'O ICNAS vai contactá-lo para marcar o dia e a hora. Se não puder comparecer, avise com a maior antecedência possível: a hora pode ser dada a outra pessoa.',
+    '',
+    '## O que trazer',
+    'Esta requisição, o cartão de cidadão, os seus óculos (de longe e de perto), a lista dos medicamentos que toma e exames oculares anteriores, se os tiver.',
+    '',
+    '## Lentes de contacto',
+    'Não as use no dia do exame; traga os óculos.',
+    '',
+    '## Dilatação da pupila',
+    'Alguns exames precisam de gotas para dilatar a pupila. Durante algumas horas a visão fica desfocada e a luz incomoda: **não conduza depois do exame** e, se possível, venha acompanhado. Traga óculos de sol.',
+    '',
+    '## Eletrofisiologia (ERG, PEV, EOG)',
+    'São colocados pequenos elétrodos na pele (e, no ERG, junto ao olho). Venha sem maquilhagem nos olhos e com a pele da cara e o cabelo limpos, sem cremes nem gel. Não dói.',
+    '',
+    '## Crianças',
+    'Devem vir acompanhadas por um adulto responsável. Traga um brinquedo ou algo de que a criança goste; ajuda a colaborar.',
+  ].join('\n'),
+  req_updated_at: null,
 };
 
 export function seed(db) {
@@ -107,6 +130,11 @@ export function seed(db) {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
     // Eletrofisiologia: no máximo 2 de cada por dia (editável em Atos / MCDTs).
     db.transaction(() => DEFAULT_EXAM_TYPES.forEach((t, i) => ins.run(...t, i, t[3] ? 2 : null, RESEARCH_CODES.has(t[0]) ? 'investigacao' : 'clinico')))();
+    // Grupos no impresso de requisição (a migração 009 corre antes de haver tipos numa BD nova).
+    const grp = { erg: 'eletro', erg_pattern: 'eletro', pev: 'eletro', eog: 'eletro', oct: 'imagem', oct_ant: 'imagem', retino: 'imagem', micro: 'funcao', csf: 'funcao', ortoptica: 'funcao', eyetracking: 'funcao' };
+    const up = db.prepare('UPDATE exam_types SET req_group = ? WHERE code = ?');
+    for (const [code, g] of Object.entries(grp)) up.run(g, code);
+    db.prepare("UPDATE exam_types SET req_prep = 'inclui dilatação e cerca de 20 min de adaptação ao escuro' WHERE code = 'erg'").run();
   }
   const insSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) insSetting.run(k, JSON.stringify(v));
